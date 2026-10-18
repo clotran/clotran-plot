@@ -1,0 +1,5 @@
+;; clotran-plot: graphs for clotran -- in a clotran-ui window, or to
+;; SVG and PNG with no window system. Provided libraries
+;; (org.clojure/clojure) are clotran itself; see clotran's PACKAGES.md.
+{:paths ["src"]
+ :deps {org.clojure/clojure {:mvn/version "1.12.6"}}}
