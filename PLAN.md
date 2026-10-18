@@ -69,11 +69,15 @@ to zoom, double-click to go back -- the TI-85's TRACE and ZOOM.
    over a fuzzed set of ranges.
 2. `(graph (* x x))` to SVG, then in a clotran-ui window, with trace and
    zoom -- the one for James's son.
-3. Several functions; then data of each shape in the table.
-4. Time axes.
-5. Live: a plot of an atom.
-6. 3D: a surface with a colour map; ball-and-stick molecules (bonds from
+3. The `graphics` template: `clotran new my-plots --template graphics`
+   makes a project depending on clotran-ui and clotran-plot whose
+   core.cljf opens a window and graphs x^2 -- a working graph in one
+   command. The template lives here, beside the code it uses.
+4. Several functions; then data of each shape in the table.
+5. Time axes.
+6. Live: a plot of an atom.
+7. 3D: a surface with a colour map; ball-and-stick molecules (bonds from
    covalent radii, CPK colours, as Avogadro and Jmol do).
-7. The PES demo end to end: a scan run through a Fortran package fills a
+8. The PES demo end to end: a scan run through a Fortran package fills a
    surface as it goes; a click on a point plays that point's
    optimization as an animated molecule beside its energy curve.
