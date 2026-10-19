@@ -182,5 +182,6 @@
         win (ui/window {:title (or title "surface") :width width :height height})]
     (if (ui/view3d! win)
       (ui/scene3d! win (mesh/mesh s th))
-      (ui/draw! win (ui-marks (marks/marks s th) th) :font (family (:font th))))
+      (do (binding [*out* *err*] (println "clotran-plot: no 3D view here --" (ui/g3-error) "-- so the surface is drawn in 2D"))
+          (ui/draw! win (ui-marks (marks/marks s th) th) :font (family (:font th)))))
     (atom {:win win :scene s :th th})))

@@ -5,4 +5,4 @@
 {:paths ["src" "resources"]
  :deps {org.clojure/clojure {:mvn/version "1.12.6"}
         clotran/clotran-ui {:git/url "https://github.com/clotran/clotran-ui"
-                            :git/sha "26d7a95f3b393b748b4b77bd8e9b36eeef3dd7c2"}}}
+                            :git/sha "a0e457ed58db5a9a322c0187b4b6cff9da328019"}}}
