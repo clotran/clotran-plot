@@ -11,9 +11,42 @@ file.
     (graph energies)         ; a list of numbers: a line over the step
     (graph scan-atom)        ; redrawn as the calculation fills it in
 
-What works today: ticks, and a function's graph to SVG (half of
-milestone 2). What it is to become, and in what order, is
-[PLAN.md](PLAN.md).
+What works today: ticks; a function's graph, or several, in a window
+with trace and zoom (macOS) and to SVG; a graph of an atom, redrawn when
+it changes; a graphing calculator; surfaces to SVG. What it is to become,
+and in what order, is [PLAN.md](PLAN.md).
+
+## In a window
+
+    (require '[clotran.plot :as plot] '[clojure.math :as m])
+    (plot/show m/sin)                        ; a window: sin x over -10..10
+    (plot/show [m/sin m/cos #(/ % 4)])       ; three at once, one colour each
+    (def f (atom m/sin))
+    (plot/show f)  (reset! f m/cos)          ; redrawn when the atom changes
+
+As a TI-85: move the mouse and the nearest curve's point is marked with
+its x and y (TRACE); drag a box to zoom into it, `+` and `-` zoom in and
+out about the middle, Escape or a double-click goes back, `0` is
+-10..10 again (ZOOM). The window redraws for its size. It is the same
+picture the SVG is written from (`clotran.plot.marks`), drawn by
+[clotran-ui](https://github.com/clotran/clotran-ui).
+
+**The graphing calculator** -- a text field and a graph; type an
+expression in x and the graph follows as you type:
+
+    clotran -m clotran.plot.calc
+
+`(* x x)`, `(sin x)`, several at once as `(sin x) (/ x 4)`; sin, cos,
+tan, sqrt, exp, log, pow, PI and the rest of `clojure.math` by name.
+While what is typed is not finished, the last graph stays and the line
+under the field says why.
+
+Today this needs macOS and a clotran with `fortran/main-thread*` (core
+branch `feat/ui-main-thread`, until it merges); Windows is next.
+`test/window_check.bb` opens real windows, drives them with events as a
+person would, and checks 12 things: the window, its pixels, trace, zoom,
+`+`, going back, resizing, a live atom, three curves, the calculator,
+and that every window closes and the program ends by itself.
 
 ## Ticks
 

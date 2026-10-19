@@ -1,0 +1,94 @@
+;; test/window_check.cljf: clotran's half of test/window_check.bb -- opens
+;; real windows, drives them with injected events as a person would, and
+;; prints what happened as EDN lines for the bb script to judge.
+(require '[clotran.plot :as plot] '[clotran.plot.marks :as marks]
+         '[clotran.ui :as ui] '[clojure.math :as m])
+
+(def out (first *command-line-args*))
+
+(defn settle
+  "Waits until (pred) or 10 s; answers (pred)'s last value."
+  [pred]
+  (loop [t 0]
+    (let [v (pred)]
+      (if (or v (> t 10000)) v (do (clotran.host.thread/sleep 50) (recur (+ t 50)))))))
+
+(defn near [[a b] [c d]] (and a c (< (abs (- a c)) 0.05) (< (abs (- b d)) 0.05)))
+
+(defn px-of [st x y] (let [[px py] (marks/pixels (:scene @st))] [(px x) (py y)]))
+
+(def st (plot/show m/sin))
+(settle #(:scene @st))
+(def w (:win @st))
+(prn [:opened w (ui/open-count)])
+(prn [:capture (ui/capture w (str out "/window-sin.png"))])
+(prn [:snapshot (ui/snapshot w 600 400 (str out "/snapshot-sin.png")) (:box (:scene @st)) (:x-range (:scene @st)) (:y-range (:scene @st))])
+
+;; trace: the mouse at x = 1.3 on the curve
+(let [[mx my] (px-of st 1.3 (m/sin 1.3))]
+  (ui/inject! w {:type :move :x mx :y my :held 0})
+  (prn [:trace mx my (settle #(:trace @st))])
+  (clotran.host.thread/sleep 300)
+  (ui/capture w (str out "/window-trace.png")))
+
+;; zoom: a box dragged from (-2, 0.5) to (3, -0.5)
+(let [[x0 y0] (px-of st -2 0.5) [x1 y1] (px-of st 3 -0.5)]
+  (ui/inject! w {:type :down :x x0 :y y0 :button 1 :count 1})
+  (ui/inject! w {:type :move :x x1 :y y1 :held 1})
+  (clotran.host.thread/sleep 500)
+  (ui/capture w (str out "/window-zoom-box.png"))
+  (ui/inject! w {:type :up :x x1 :y y1 :button 1 :count 1})
+  (settle #(near [-2.0 3.0] (:x-range (:scene @st))))
+  (prn [:zoom [x0 y0 x1 y1] (:x @st) (:y @st) (:x-range (:scene @st)) (:y-range (:scene @st))]))
+(ui/capture w (str out "/window-zoomed.png"))
+
+;; + zooms in about the middle, Escape goes back, twice to the start
+(ui/inject! w {:type :key :char \+})
+(settle #(near [-0.75 1.75] (:x-range (:scene @st))))
+(prn [:plus (:x-range (:scene @st)) (:y-range (:scene @st))])
+(ui/inject! w {:type :key :key :escape})
+(ui/inject! w {:type :key :key :escape})
+(settle #(= [-10.0 10.0] (:x-range (:scene @st))))
+(prn [:back (:x-range (:scene @st)) (:y-range (:scene @st))])
+
+;; resize
+(ui/inject! w {:type :resize :width 800 :height 500})
+(settle #(= [800 500] (:size (:scene @st))))
+(prn [:resize (:size (:scene @st)) (:box (:scene @st))])
+(ui/close! w)
+
+;; live: a graph of an atom redraws when it changes
+(def a (atom m/sin))
+(def st2 (plot/show a :title "live"))
+(settle #(:scene @st2))
+(defn first-pt [] (first (first (:segments (first (:curves (:scene @st2)))))))
+(prn [:live-before (first-pt)])
+(reset! a m/cos)
+(settle #(not= (m/sin -10.0) (second (first-pt))))
+(prn [:live-after (first-pt)])
+(ui/close! (:win @st2))
+
+;; several at once
+(def st3 (plot/show [m/sin m/cos #(/ % 4)] :title "three"))
+(settle #(:scene @st3))
+(prn [:three (count (:curves (:scene @st3))) (ui/capture (:win @st3) (str out "/window-three.png"))])
+(ui/close! (:win @st3))
+
+;; the calculator: typing (the field set, its change event injected)
+(require '[clotran.plot.calc :as calc])
+(def c (calc/run))
+(settle #(:scene @c))
+(defn type! [s] (ui/set-text! (:win @c) :entry s) (ui/inject! (:win @c) {:type :text}))
+(type! "(* x x)")
+(settle #(= [0.0 100.0] (:y-range (:scene @c))))
+(clotran.host.thread/sleep 300)
+(prn [:calc-square (:y-range (:scene @c)) (ui/capture (:win @c) (str out "/calc-square.png"))])
+(type! "(* x")
+(clotran.host.thread/sleep 1000)
+(prn [:calc-unfinished (:y-range (:scene @c)) (ui/capture (:win @c) (str out "/calc-unfinished.png"))])
+(type! "(sin x) (/ x 4)")
+(settle #(= 2 (count (:curves (:scene @c)))))
+(clotran.host.thread/sleep 300)
+(prn [:calc-two (count (:curves (:scene @c))) (ui/capture (:win @c) (str out "/calc-two.png"))])
+(ui/close! (:win @c))
+(prn [:closed (ui/open-count)])

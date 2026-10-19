@@ -141,14 +141,17 @@
   Mathematica's PlotPoints); :depth, the passes that halve intervals
   (6, its MaxRecursion); :bend, the turn in degrees that asks for a
   halving (5); :tail, the share of the curve dropped beyond a pole on
-  each side (0.025); :w and :h, the pixels (520 by 340)."
+  each side (0.025); :w and :h, the pixels (520 by 340); :y, a y range
+  [lo hi] to draw in instead of the curve's own (a zoom), its ticks inside it."
   ([f xmin xmax] (sample f xmin xmax {}))
-  ([f xmin xmax {:keys [points depth bend tail w h]
+  ([f xmin xmax {:keys [points depth bend tail w h y]
                  :or {points 50 depth 6 bend 5 tail 0.025 w 520 h 340}}]
    (let [[a b] (map double (sort [xmin xmax]))
          sx (/ w (- b a))
          rad (* bend (/ m/PI 180))
-         axis-of #(y-axis (if (some (fn [p] (p 1)) %) (y-extent f a b % tail) [-1.0 1.0]))
+         axis-of #(if y
+                    (let [[lo hi] (sort y)] {:y-range [(double lo) (double hi)] :y-ticks (filterv (fn [t] (<= lo t hi)) (ticks/extended lo hi 5))})
+                    (y-axis (if (some (fn [p] (p 1)) %) (y-extent f a b % tail) [-1.0 1.0])))
          sy-of #(let [[lo hi] (:y-range %)] (/ h (- hi lo)))
          pts0 (mapv #(vector % (value f %)) (grid a b points))
          sy0 (sy-of (axis-of pts0))

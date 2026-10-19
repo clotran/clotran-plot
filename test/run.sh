@@ -8,3 +8,7 @@ bb test/plot_check.bb dark
 bb test/plot_check.bb light
 bb test/theme_check.bb
 bb test/surface_check.bb
+# Windows on screen: macOS for now, and a clotran with fortran/main-thread*
+# (core branch feat/ui-main-thread until it merges); clotran-ui beside this
+# checkout (CLOTRAN_UI). Its own CLOTRAN for the windows: CLOTRAN_WINDOW.
+if [ "$(uname)" = Darwin ]; then CLOTRAN="${CLOTRAN_WINDOW:-${CLOTRAN:-../clotran/clotran}}" bb test/window_check.bb; fi

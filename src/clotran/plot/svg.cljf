@@ -1,58 +1,12 @@
 (ns clotran.plot.svg
-  "A scene (clotran.plot/graph's) as SVG text in the look of a theme
-  (clotran.plot.theme): axes, ticks and their labels, and each curve as polylines
-  clipped to the plot box, broken where the curve is."
-  (:require [clojure.math :as m]
-            [clojure.string :as str]
-            [clotran.plot.surface :as surface]
+  "A scene (clotran.plot/graph's or /surface's) as SVG text in the look of
+  a theme (clotran.plot.theme): its marks (clotran.plot.marks), each one
+  SVG element."
+  (:require [clojure.string :as str]
+            [clotran.plot.marks :as marks]
             [clotran.plot.theme :as theme]))
 
-(defn- decimals
-  "The fewest decimals, at most 12, that show every tick exactly."
-  [ts]
-  (or (first (filter (fn [d] (every? #(let [v (* % (m/pow 10 d))]
-                                        (< (abs (- v (m/rint v))) (* 1e-6 (max 1 (abs v)))))
-                                     ts))
-                     (range 13)))
-      12))
-
-(defn labels
-  "Tick values as labels with the ticks' common decimals: 0.30000000000000004
-  among 0.1 steps is \"0.3\", and -0.0 or -1e-17 is \"0\". Each tick is
-  rounded to those decimals before format sees it, and a trailing dot
-  dropped: clotran formats %.0f as Fortran's F edit does, 10.0 as \"10.\"."
-  [ts]
-  (let [d (decimals ts) p (m/pow 10 d)]
-    (mapv #(let [r (/ (m/rint (* % p)) p)]
-             (str/replace (format (str "%." d "f") (if (zero? r) 0.0 r)) #"\.$" ""))
-          ts)))
-
-(defn- clip
-  "The part of the line p q inside the box [x0 y0 x1 y1], or nil
-  (Liang and Barsky, 1984)."
-  [[px py] [qx qy] [x0 y0 x1 y1]]
-  (let [dx (- qx px) dy (- qy py)
-        [t0 t1] (reduce (fn [[t0 t1 :as t] [p q]]
-                          (cond (nil? t) nil
-                                (zero? p) (when (>= q 0) t)
-                                :else (let [r (/ q p)]
-                                        (if (neg? p)
-                                          (when (<= r t1) [(max t0 r) t1])
-                                          (when (>= r t0) [t0 (min t1 r)])))))
-                        [0.0 1.0]
-                        [[(- dx) (- px x0)] [dx (- x1 px)] [(- dy) (- py y0)] [dy (- y1 py)]])]
-    (when t0
-      [[(+ px (* t0 dx)) (+ py (* t0 dy))] [(+ px (* t1 dx)) (+ py (* t1 dy))]])))
-
-(defn- runs
-  "A polyline in pixels clipped to box: the visible runs of points."
-  [pts box]
-  (let [[rs r] (reduce (fn [[rs r] [p q]]
-                         (if-let [[a b] (clip p q box)]
-                           (if (= (peek r) a) [rs (conj r b)] [(cond-> rs (seq r) (conj r)) [a b]])
-                           [(cond-> rs (seq r) (conj r)) []]))
-                       [[] []] (partition 2 1 pts))]
-    (cond-> rs (seq r) (conj r))))
+(def labels marks/labels)
 
 (defn- n2 [x] (format "%.2f" (double x)))
 
@@ -71,235 +25,47 @@
   [c w]
   (str "stroke=\"" (esc c) "\"" (when (not= w 1) (str " stroke-width=\"" w "\""))))
 
-(defn- line [x1 y1 x2 y2 attrs]
-  (str "<line x1=\"" (n2 x1) "\" y1=\"" (n2 y1) "\" x2=\"" (n2 x2) "\" y2=\"" (n2 y2) "\" " attrs "/>"))
+(defn- pts [ps] (str/join " " (map (fn [[x y]] (str (n2 x) "," (n2 y))) ps)))
 
-(defn- text [x y anchor s]
-  (str "<text x=\"" (n2 x) "\" y=\"" (n2 y) "\" text-anchor=\"" anchor "\">" (esc s) "</text>"))
-
-(defn- frame-axes
-  "Ticks and labels outside the box's bottom and left, then the box."
-  [{:keys [box x-ticks y-ticks]} px py {:keys [ink axis-width minus]}]
-  (let [[bx by bw bh] box
-        st (stroke ink axis-width)]
-    (concat
-     (mapcat (fn [t s] [(line (px t) (+ by bh) (px t) (+ by bh 5) st)
-                        (text (px t) (+ by bh 18) "middle" (str/replace s "-" minus))])
-             x-ticks (labels x-ticks))
-     (mapcat (fn [t s] [(line (- bx 5) (py t) bx (py t) st)
-                        (text (- bx 8) (+ (py t) 4) "end" (str/replace s "-" minus))])
-             y-ticks (labels y-ticks))
-     [(str "<rect x=\"" bx "\" y=\"" by "\" width=\"" bw "\" height=\"" bh "\" fill=\"none\" " st "/>")])))
-
-(defn- origin-axes
-  "The axes through the origin, or along the edge nearer it when 0 is
-  outside a range, each with an arrow head at its positive end and
-  ticks across it; labels beside them. A 0 label is left out where the
-  other axis runs through it."
-  [{:keys [box x-range y-range x-ticks y-ticks]} px py {:keys [ink axis-width minus]}]
-  (let [[bx by bw bh] box [xa xb] x-range [ya yb] y-range
-        clamp (fn [v a b] (max a (min b v)))
-        ax (px (clamp 0.0 xa xb)) ay (py (clamp 0.0 ya yb))
-        st (stroke ink axis-width)
-        right (+ bx bw 10) top (- by 10)]
-    (concat
-     [(line bx ay (- right 6) ay st)
-      (str "<polygon points=\"" (n2 right) "," (n2 ay) " " (n2 (- right 10)) "," (n2 (- ay 4)) " "
-           (n2 (- right 10)) "," (n2 (+ ay 4)) "\" fill=\"" (esc ink) "\"/>")
-      (line ax (+ by bh) ax (+ top 6) st)
-      (str "<polygon points=\"" (n2 ax) "," (n2 top) " " (n2 (- ax 4)) "," (n2 (+ top 10)) " "
-           (n2 (+ ax 4)) "," (n2 (+ top 10)) "\" fill=\"" (esc ink) "\"/>")]
-     (mapcat (fn [t s] (cons (line (px t) (- ay 4) (px t) (+ ay 4) st)
-                             (when-not (and (zero? t) (< ya 0) (<= xa 0 xb))
-                               [(text (px t) (+ ay 20) "middle" (str/replace s "-" minus))])))
-             x-ticks (labels x-ticks))
-     (mapcat (fn [t s] (cons (line (- ax 4) (py t) (+ ax 4) (py t) st)
-                             (when-not (and (zero? t) (< xa 0) (<= ya 0 yb))
-                               [(text (- ax 8) (+ (py t) 5) "end" (str/replace s "-" minus))])))
-             y-ticks (labels y-ticks)))))
-
-(defn- head
-  "The svg element's opening and the ground."
-  [W H {:keys [background label-colour font font-size]}]
-  [(str "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"" W "\" height=\"" H
-        "\" viewBox=\"0 0 " W " " H "\" font-family=\"" (esc font) "\" font-size=\"" font-size "\""
-        (when (not= label-colour "black") (str " fill=\"" (esc label-colour) "\"")) ">")
-   (str "<rect width=\"" W "\" height=\"" H "\" fill=\"" (esc background) "\"/>")])
-
-(defn- curves-svg
-  "A scene of curves: the ground, the grid, the zero lines, the axes as
-  the theme's :axes says, and the curves, curve i in the palette's
-  colour i, in turn."
-  [{:keys [size box x-range y-range x-ticks y-ticks curves] :as scene}
-   {:keys [grid grid-opacity zero-lines axes palette] :as th}]
-  (let [[W H] size
-        [bx by bw bh] box
-        [xa xb] x-range [ya yb] y-range
-        px #(+ bx (* (- % xa) (/ bw (- xb xa))))
-        py #(- (+ by bh) (* (- % ya) (/ bh (- yb ya))))
-        clipbox [bx by (+ bx bw) (+ by bh)]
-        grid-st (str "stroke=\"" (esc (str grid)) "\" stroke-opacity=\"" grid-opacity "\"")]
-    (str/join
-     "\n"
-     (concat
-      (head W H th)
-      (when (not= :none grid)
-        (concat (for [t x-ticks] (line (px t) by (px t) (+ by bh) grid-st))
-                (for [t y-ticks] (line bx (py t) (+ bx bw) (py t) grid-st))))
-      (when (not= :none zero-lines)
-        (concat (when (< xa 0 xb) [(line (px 0) by (px 0) (+ by bh) (stroke zero-lines 1))])
-                (when (< ya 0 yb) [(line bx (py 0) (+ bx bw) (py 0) (stroke zero-lines 1))])))
-      ((case axes :frame frame-axes :origin origin-axes) scene px py th)
-      (for [[i {:keys [segments]}] (map-indexed vector curves)
-            seg segments
-            r (runs (map (fn [[x y]] [(px x) (py y)]) seg) clipbox)]
-        (str "<polyline fill=\"none\" stroke=\"" (esc (palette (mod i (count palette))))
-             "\" stroke-width=\"" (:stroke th) "\" stroke-linejoin=\"round\" points=\""
-             (str/join " " (map (fn [[x y]] (str (n2 x) "," (n2 y))) r)) "\"/>"))
-      ["</svg>" ""]))))
-
-(defn- hex-rgb [h]
-  (mapv (fn [k] (reduce #(+ (* 16 %1) (str/index-of "0123456789abcdef" (str/lower-case (str %2)))) 0
-                        (subs h k (+ k 2))))
-        [1 3 5]))
-
-(defn- colour-at
-  "The colour at t (0..1) along the colormap's evenly spaced stops,
-  times intensity k, as #rrggbb."
-  [cmap t k]
-  (let [n (dec (count cmap))
-        p (* (max 0.0 (min 1.0 t)) n)
-        i (min (long (m/floor p)) (dec n))
-        f (- p i)
-        [a b] [(hex-rgb (cmap i)) (hex-rgb (cmap (inc i)))]]
-    (apply format "#%02x%02x%02x"
-           (map #(long (max 0 (min 255 (m/round (* k (+ %1 (* f (- %2 %1)))))))) a b))))
-
-(defn- cells
-  "The grid cells [i j] whose four corners are finite and inside the z
-  range; the rest are holes."
-  [{:keys [xs zs z-range]}]
-  (let [n (dec (count xs)) [z0 z1] z-range
-        ok? (fn [i j] (when-let [z ((zs i) j)] (<= z0 z z1)))]
-    (for [i (range n) j (range n)
-          :when (and (ok? i j) (ok? (inc i) j) (ok? (inc i) (inc j)) (ok? i (inc j)))]
-      [i j])))
-
-(def ^:private light
-  "Where the light comes from, in the unit box: left, front, above."
-  (let [l [-1.0 -1.5 2.5] n (m/sqrt (reduce + (map * l l)))] (mapv #(/ % n) l)))
-
-(defn- shade
-  "The light on cell [i j]: 0.35 plus 0.65 of the cosine between its
-  upward normal (in the box as drawn) and the light."
-  [{:keys [xs ys zs view] :as s} i j]
-  (let [U (fn [i j] (let [[u v w] (surface/unit s [(xs i) (ys j) ((zs i) j)])] [u v (* (:height view) w)]))
-        d1 (mapv - (U (inc i) (inc j)) (U i j))
-        d2 (mapv - (U i (inc j)) (U (inc i) j))
-        [a b c] d1 [d e f] d2
-        nv [(- (* b f) (* c e)) (- (* c d) (* a f)) (- (* a e) (* b d))]
-        len (m/sqrt (reduce + (map * nv nv)))
-        nv (if (neg? (nv 2)) (mapv - nv) nv)
-        cos (if (zero? len) 1.0 (/ (reduce + (map * nv light)) len))]
-    (+ 0.35 (* 0.65 (max 0.0 cos)))))
-
-(defn- surface-svg
-  "A surface scene: the box's back edges, the cells back to front (the
-  painter's algorithm, by each cell's mean depth), each filled by the
-  colormap at its mean height and shaded by the light, its edges the
-  mesh; then the front edges, and ticks with labels on the x and y
-  edges nearest the viewer at the bottom and the z edge leftmost."
-  [{:keys [size xs ys zs z-range x-ticks y-ticks z-ticks view] :as s}
-   {:keys [colormap mesh mesh-opacity ink axis-width minus] :as th}]
-  (let [[W H] size [z0 z1] z-range
-        {:keys [scale origin]} view
-        pix (fn [uvw] (let [[X U D] (surface/rotate view uvw)]
-                        [(+ (origin 0) (* scale X)) (- (origin 1) (* scale U)) D]))
-        P (fn [i j] (surface/project s [(xs i) (ys j) ((zs i) j)]))
-        pts #(str/join " " (map (fn [[x y]] (str (n2 x) "," (n2 y))) %))
-        mesh-st (if (= :none mesh) "stroke=\"none\""
-                    (str "stroke=\"" (esc mesh) "\" stroke-width=\"0.5\" stroke-opacity=\"" mesh-opacity "\""))
-        drawn (sort-by :depth (for [[i j] (cells s)
-                                    :let [ps (mapv #(apply P %) [[i j] [(inc i) j] [(inc i) (inc j)] [i (inc j)]])]]
-                                {:i i :j j :ps ps :depth (/ (reduce + (map #(% 2) ps)) 4)}))
-        corners [-0.5 0.5]
-        edges (concat (for [v corners w corners] [[-0.5 v w] [0.5 v w]])
-                      (for [u corners w corners] [[u -0.5 w] [u 0.5 w]])
-                      (for [u corners v corners] [[u v -0.5] [u v 0.5]]))
-        mid (fn [[a b]] (mapv #(/ (+ %1 %2) 2) a b))
-        edge-line (fn [[a b]] (let [[x1 y1] (pix a) [x2 y2] (pix b)]
-                                (line x1 y1 x2 y2 (str (stroke ink axis-width) " stroke-opacity=\"0.6\""))))
-        [back front] ((juxt remove filter) #(pos? ((pix (mid %)) 2)) edges)
-        [cx cy] (pix [0 0 0])
-        nearest (fn [es] (apply max-key #((pix (mid %)) 2) es))
-        x-edge (nearest (for [v corners] [[-0.5 v -0.5] [0.5 v -0.5]]))
-        y-edge (nearest (for [u corners] [[u -0.5 -0.5] [u 0.5 -0.5]]))
-        z-edge (apply min-key #((pix (mid %)) 0) (for [u corners v corners] [[u v -0.5] [u v 0.5]]))
-        outward (fn [[a b :as e]]
-                  ;; perpendicular to the edge on screen, away from the box's centre
-                  (let [[ax ay] (pix a) [bx by] (pix b) [mx my] (pix (mid e))
-                        ex (- bx ax) ey (- by ay) l (m/sqrt (+ (* ex ex) (* ey ey)))
-                        [px py] (if (zero? l) [0.0 1.0] [(/ (- ey) l) (/ ex l)])]
-                    (if (neg? (+ (* px (- mx cx)) (* py (- my cy)))) [(- px) (- py)] [px py])))
-        anchor (fn [[dx]] (cond (< dx -0.3) "end" (> dx 0.3) "start" :else "middle"))
-        unit1 (fn [t [a b]] (- (/ (- t a) (- b a)) 0.5))
-        along (fn [[a b] t] (mapv #(+ %1 (* t (- %2 %1))) a b))
-        tick-marks (fn [e dir ts rng name off]
-                     (concat
-                      (mapcat (fn [t lab]
-                                (let [[x y] (pix (along e (+ (unit1 t rng) 0.5)))
-                                      [dx dy] dir]
-                                  [(line x y (+ x (* 6 dx)) (+ y (* 6 dy)) (stroke ink axis-width))
-                                   (text (+ x (* 16 dx)) (+ y (* 16 dy) 4) (anchor dir) (str/replace lab "-" minus))]))
-                              ts (labels ts))
-                      (let [[x y] (pix (mid e)) [dx dy] dir]
-                        [(str "<text x=\"" (n2 (+ x (* off dx))) "\" y=\"" (n2 (+ y (* off dy) 4))
-                              "\" text-anchor=\"middle\" font-style=\"italic\">" name "</text>")])))]
-    (str/join
-     "\n"
-     (concat
-      (head W H th)
-      (map edge-line back)
-      (for [{:keys [i j ps]} drawn
-            :let [t (/ (- (/ (reduce + (for [[a b] [[i j] [(inc i) j] [(inc i) (inc j)] [i (inc j)]]] ((zs a) b))) 4) z0)
-                       (- z1 z0))]]
-        (str "<polygon data-i=\"" i "\" data-j=\"" j "\" points=\"" (pts ps) "\" fill=\""
-             (colour-at colormap t (shade s i j)) "\" " mesh-st " stroke-linejoin=\"round\"/>"))
-      (map edge-line front)
-      (tick-marks x-edge (outward x-edge) x-ticks (:x-range s) "x" 44)
-      (tick-marks y-edge (outward y-edge) y-ticks (:y-range s) "y" 44)
-      ;; z's name clear of its widest label, at about 0.6 em a character
-      (tick-marks z-edge [-1.0 0.0] z-ticks z-range "z"
-                  (+ 30 (* 0.6 (:font-size th) (apply max (map count (labels z-ticks))))))
-      ["</svg>" ""]))))
-
-(defn- heat-svg
-  "A heat-map scene: each cell a rectangle in the colormap's colour at
-  its mean height, seen from above; then the frame, ticks and labels."
-  [{:keys [size box xs ys zs z-range x-range y-range] :as s} {:keys [colormap] :as th}]
-  (let [[W H] size [bx by bw bh] box [xa xb] x-range [ya yb] y-range [z0 z1] z-range
-        px #(+ bx (* (- % xa) (/ bw (- xb xa))))
-        py #(- (+ by bh) (* (- % ya) (/ bh (- yb ya))))]
-    (str/join
-     "\n"
-     (concat
-      (head W H th)
-      (for [[i j] (cells s)
-            :let [t (/ (- (/ (+ ((zs i) j) ((zs (inc i)) j) ((zs (inc i)) (inc j)) ((zs i) (inc j))) 4) z0) (- z1 z0))]]
-        (str "<rect data-i=\"" i "\" data-j=\"" j "\" x=\"" (n2 (px (xs i))) "\" y=\"" (n2 (py (ys (inc j))))
-             "\" width=\"" (n2 (- (px (xs (inc i))) (px (xs i)))) "\" height=\"" (n2 (- (py (ys j)) (py (ys (inc j)))))
-             "\" fill=\"" (colour-at colormap t 1.0) "\" shape-rendering=\"crispEdges\"/>"))
-      (frame-axes s px py th)
-      ["</svg>" ""]))))
+(defn element
+  "One mark as one SVG element."
+  [{:keys [op] :as m}]
+  (case op
+    :ground (str "<rect width=\"" (:w m) "\" height=\"" (:h m) "\" fill=\"" (esc (:fill m)) "\"/>")
+    :line (str "<line x1=\"" (n2 (:x1 m)) "\" y1=\"" (n2 (:y1 m)) "\" x2=\"" (n2 (:x2 m)) "\" y2=\"" (n2 (:y2 m)) "\" "
+               (stroke (:colour m) (:width m))
+               (when-let [o (:opacity m)] (str " stroke-opacity=\"" o "\"")) "/>")
+    :text (str "<text x=\"" (n2 (:x m)) "\" y=\"" (n2 (:y m)) "\" text-anchor=\"" (:anchor m) "\""
+               (when (:italic m) " font-style=\"italic\"") ">" (esc (:text m)) "</text>")
+    :rect (if (:i m)
+            (str "<rect data-i=\"" (:i m) "\" data-j=\"" (:j m) "\" x=\"" (n2 (:x m)) "\" y=\"" (n2 (:y m))
+                 "\" width=\"" (n2 (:w m)) "\" height=\"" (n2 (:h m))
+                 "\" fill=\"" (:fill m) "\" shape-rendering=\"crispEdges\"/>")
+            (str "<rect x=\"" (:x m) "\" y=\"" (:y m) "\" width=\"" (:w m) "\" height=\"" (:h m)
+                 "\" fill=\"" (esc (:fill m)) "\" " (stroke (:colour m) (:width m)) "/>"))
+    :polygon (if (:i m)
+               (str "<polygon data-i=\"" (:i m) "\" data-j=\"" (:j m) "\" points=\"" (pts (:points m)) "\" fill=\""
+                    (:fill m) "\" "
+                    (let [ms (:mesh m)]
+                      (if (= :none ms) "stroke=\"none\""
+                          (str "stroke=\"" (esc (:colour ms)) "\" stroke-width=\"0.5\" stroke-opacity=\"" (:opacity ms) "\"")))
+                    " stroke-linejoin=\"round\"/>")
+               (str "<polygon points=\"" (pts (:points m)) "\" fill=\"" (esc (:fill m)) "\"/>"))
+    :polyline (str "<polyline fill=\"none\" stroke=\"" (esc (:colour m)) "\" stroke-width=\"" (:width m)
+                   "\" stroke-linejoin=\"round\" points=\"" (pts (:points m)) "\"/>")))
 
 (defn svg
   "The scene as an SVG document, a string, in the look of its :theme --
   a keyword, a path or a map, as clotran.plot.theme reads them; when it
-  has none, clotran.plot.theme/default. A scene's :kind picks the
-  drawing: curves (none), :surface or :heat."
+  has none, clotran.plot.theme/default."
   [scene]
-  (let [th (theme/theme (or (:theme scene) (theme/default)))]
-    (case (:kind scene)
-      :surface (surface-svg scene th)
-      :heat (heat-svg scene th)
-      (curves-svg scene th))))
+  (let [{:keys [label-colour font font-size] :as th} (theme/theme (or (:theme scene) (theme/default)))
+        [W H] (:size scene)]
+    (str/join
+     "\n"
+     (concat
+      [(str "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"" W "\" height=\"" H
+            "\" viewBox=\"0 0 " W " " H "\" font-family=\"" (esc font) "\" font-size=\"" font-size "\""
+            (when (not= label-colour "black") (str " fill=\"" (esc label-colour) "\"")) ">")]
+      (map element (marks/marks scene th))
+      ["</svg>" ""]))))

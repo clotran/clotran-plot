@@ -1,5 +1,8 @@
 ;; clotran-plot: graphs for clotran -- in a clotran-ui window, or to
 ;; SVG and PNG with no window system. Provided libraries
 ;; (org.clojure/clojure) are clotran itself; see clotran's PACKAGES.md.
+;; clotran-ui is loaded only when a window is asked for (clotran.plot/show).
 {:paths ["src" "resources"]
- :deps {org.clojure/clojure {:mvn/version "1.12.6"}}}
+ :deps {org.clojure/clojure {:mvn/version "1.12.6"}
+        clotran/clotran-ui {:git/url "https://github.com/clotran/clotran-ui"
+                            :git/sha "4b90a62e8cf7b5837efc44526ac5ce0a1e3acad4"}}}

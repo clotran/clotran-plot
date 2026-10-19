@@ -18,22 +18,36 @@
   in data units. Each curve is sampled by clotran.plot.sample, and the y
   range is its, or for several the union of theirs rounded out to new
   ticks; the x range is as given, with extended-Wilkinson ticks inside
-  it."
+  it. Options, a map: :size [width height] in pixels (600 by 400; the
+  box keeps its margins), and :y [ymin ymax], a y range to draw in
+  instead of the curves' own -- a zoom."
   ([f] (graph f -10 10))
-  ([f xmin xmax]
-   (let [[a b] (map double (sort [xmin xmax]))
+  ([f xmin xmax] (graph f xmin xmax {}))
+  ([f xmin xmax {y :y sz :size :or {sz size}}]
+   (let [[W H] sz
+         [a b] (map double (sort [xmin xmax]))
+         box (if (= [W H] size) box [60 20 (- W 80) (- H 60)])
          [_ _ w h] box
-         ss (mapv #(sample/sample % a b {:w w :h h}) (if (vector? f) f [f]))
-         y-ticks (if (= 1 (count ss))
+         ss (mapv #(sample/sample % a b (cond-> {:w w :h h} y (assoc :y y))) (if (vector? f) f [f]))
+         y-ticks (if (or y (= 1 (count ss)))
                    (:y-ticks (first ss))
                    (ticks/extended (apply min (map (comp first :y-range) ss))
                                    (apply max (map (comp second :y-range) ss))
                                    5 {:only-loose true}))]
-     {:size size :box box
+     {:size [W H] :box box
       :x-range [a b]
       :x-ticks (filterv #(<= a % b) (ticks/extended a b 5))
-      :y-range [(first y-ticks) (peek y-ticks)] :y-ticks y-ticks
+      :y-range (if y (:y-range (first ss)) [(first y-ticks) (peek y-ticks)]) :y-ticks y-ticks
       :curves (mapv #(hash-map :segments (:segments %)) ss)})))
+
+(defn show
+  "f graphed in a window, with trace and zoom (clotran.plot.window/show,
+  whose options it takes): f a function of x, a vector of them, or an
+  atom holding either, redrawn when it changes. Loads clotran-ui, and
+  builds its native half the first time, only when called."
+  [f & opts]
+  (require 'clotran.plot.window)
+  (apply (resolve 'clotran.plot.window/show) f opts))
 
 (defn graph-svg
   "The graph of f (or of a vector of functions) written to path as SVG;

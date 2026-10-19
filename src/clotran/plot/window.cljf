@@ -1,0 +1,168 @@
+(ns clotran.plot.window
+  "Graphs in a window (clotran-ui), as a TI-85 did them: the graph drawn
+  in the theme's look; TRACE -- move the mouse and the nearest curve's
+  point under it is marked with its x and y; ZOOM -- drag a box to zoom
+  into it, + and - zoom in and out about the middle, Escape or a
+  double-click goes back one zoom, and 0 is the standard -10..10 again.
+  The window redraws for its size when resized, and a graph of an atom
+  redraws whenever the atom changes.
+
+  The picture is clotran.plot.marks' -- the same marks the SVG is written
+  from -- drawn by clotran.ui."
+  (:require [clojure.math :as m]
+            [clojure.string :as str]
+            [clotran.plot :as plot]
+            [clotran.plot.marks :as marks]
+            [clotran.plot.theme :as theme]
+            [clotran.ui :as ui]))
+
+(defn- family
+  "One font family for the window from a CSS font stack: the last one
+  named, since the first are the hoped-for ones (CMU Serif) and the last
+  the everywhere one (Georgia); a generic family as the system's own."
+  [stack]
+  (let [fs (map #(str/replace (str/trim %) #"^[\"']|[\"']$" "") (str/split stack #","))
+        generic {"serif" "Georgia" "sans-serif" "Helvetica" "monospace" "Menlo"}]
+    (or (last (remove generic fs)) (generic (first fs)) "Georgia")))
+
+(defn ui-marks
+  "clotran.plot.marks' marks as clotran.ui's, in the theme th."
+  [ms {:keys [label-colour font-size]}]
+  (mapv (fn [{:keys [op] :as k}]
+          (case op
+            :ground {:op :rect :x 0 :y 0 :w (:w k) :h (:h k) :fill (:fill k)}
+            :line {:op :polyline :points [[(:x1 k) (:y1 k)] [(:x2 k) (:y2 k)]]
+                   :width (:width k) :colour (:colour k) :opacity (:opacity k 1.0)}
+            :text {:op :text :x (:x k) :y (:y k) :text (:text k) :anchor (keyword (:anchor k))
+                   :size font-size :colour label-colour :italic (:italic k)}
+            :rect (if (= "none" (:fill k))
+                    {:op :polygon :points [[(:x k) (:y k)] [(+ (:x k) (:w k)) (:y k)]
+                                           [(+ (:x k) (:w k)) (+ (:y k) (:h k))] [(:x k) (+ (:y k) (:h k))]]
+                     :fill [0 0 0 0] :width (:width k) :stroke (:colour k)}
+                    {:op :rect :x (:x k) :y (:y k) :w (:w k) :h (:h k) :fill (:fill k)})
+            :polygon (let [ms (:mesh k)]
+                       (cond-> {:op :polygon :points (:points k) :fill (:fill k)}
+                         (map? ms) (assoc :width 0.5 :stroke (:colour ms) :stroke-opacity (:opacity ms))))
+            :polyline {:op :polyline :points (:points k) :width (:width k) :colour (:colour k)}))
+        ms))
+
+(defn- fns-of [src] (let [f (if (or (fn? src) (vector? src)) src @src)] (if (vector? f) f [f])))
+
+(defn- fmt-num
+  "v as a trace shows it: 4 decimals, or 4 significant digits in
+  scientific form when very large or small."
+  [v]
+  (let [a (abs v)]
+    (str/replace (if (and (pos? a) (or (>= a 1e5) (< a 1e-3))) (format "%.3e" v) (format "%.4f" v))
+                 "-" "−")))
+
+(defn- redraw!
+  "The graph drawn again for the window's size, ranges and functions --
+  one at a time: a resize and an atom's change may both ask, and the
+  later must draw the later state."
+  [st]
+  (locking st
+    (let [{:keys [win src x y size th]} @st
+          fs (fns-of src)
+          scene (plot/graph (if (= 1 (count fs)) (first fs) fs) (x 0) (x 1) (cond-> {:size size} y (assoc :y y)))]
+      (swap! st assoc :scene scene)
+      (ui/draw! win (ui-marks (marks/marks scene th) th) :font (family (:font th)))
+      (ui/draw! win [] :layer 1))))
+
+(defn- data-x [{:keys [box x-range]} px]
+  (let [[bx _ bw] box [a b] x-range] (+ a (* (- px bx) (/ (- b a) bw)))))
+(defn- data-y [{:keys [box y-range]} py]
+  (let [[_ by _ bh] box [a b] y-range] (+ a (* (- (+ by bh) py) (/ (- b a) bh)))))
+
+(defn- inside? [{[bx by bw bh] :box} x y] (and (<= bx x (+ bx bw)) (<= by y (+ by bh))))
+
+(defn- trace!
+  "The nearest curve's point at the mouse's x, marked, with x and y."
+  [st mx my]
+  (let [{:keys [win src scene th]} @st
+        [px py] (marks/pixels scene)
+        [bx by bw bh] (:box scene)
+        x (data-x scene mx)
+        pts (keep-indexed (fn [i f] (let [v (try (f x) (catch :default _ nil))]
+                                      (when (and (number? v) (not (NaN? (double v))) (not (infinite? (double v))))
+                                        [i (double v) (py v)])))
+                          (fns-of src))
+        hit (when (seq pts) (apply min-key #(abs (- (% 2) my)) pts))]
+    (swap! st assoc :trace (when (and hit (inside? scene mx my)) {:x x :y (hit 1) :curve (hit 0)}))
+    (ui/draw! win
+              (if (and hit (inside? scene mx my))
+                (let [[i v yp] hit
+                      colour ((:palette th) (mod i (count (:palette th))))
+                      dot (for [k (range 12)] (let [a (* k (/ (* 2 m/PI) 12))] [(+ mx (* 5 (m/cos a))) (+ yp (* 5 (m/sin a)))]))]
+                  (concat
+                   [{:op :polyline :points [[mx by] [mx (+ by bh)]] :width 1 :colour (:ink th) :opacity 0.35}]
+                   (when (<= by yp (+ by bh)) [{:op :polygon :points (vec dot) :fill colour :width 1.5 :stroke (:background th)}])
+                   [{:op :rect :x (+ bx 4) :y (+ by 2) :w 230 :h 24 :fill (:background th) :opacity 0.85}
+                    {:op :text :x (+ bx 10) :y (+ by 19) :size (:font-size th) :colour colour
+                     :text (str "x = " (fmt-num x) "    y = " (fmt-num v))}]))
+                [])
+              :layer 1 :font (family (:font th)))))
+
+(defn- zoom! [st xr yr]
+  (swap! st #(-> % (update :history conj [(:x %) (:y %)]) (assoc :x xr :y yr)))
+  (redraw! st))
+
+(defn- back! [st]
+  (when-let [[x y] (peek (:history @st))]
+    (swap! st #(-> % (update :history pop) (assoc :x x :y y)))
+    (redraw! st)))
+
+(defn- scale! [st k]
+  (let [{:keys [scene]} @st
+        [a b] (:x-range scene) [c d] (:y-range scene)
+        cx (/ (+ a b) 2) cy (/ (+ c d) 2) hx (* k (/ (- b a) 2)) hy (* k (/ (- d c) 2))]
+    (zoom! st [(- cx hx) (+ cx hx)] [(- cy hy) (+ cy hy)])))
+
+(defn- on-event [st]
+  (fn [{:keys [type x y held button count char key width height]}]
+    (let [{:keys [scene drag]} @st]
+      (case type
+        :resize (do (swap! st assoc :size [(long width) (long height)]) (redraw! st))
+        :move (if (and drag (pos? (or held 0)))
+                (do (swap! st assoc-in [:drag 1] [x y])
+                    (let [[[x0 y0]] (:drag @st)]
+                      (ui/draw! (:win @st) [{:op :polygon :points [[x0 y0] [x y0] [x y] [x0 y]]
+                                             :fill [1 1 1 0.08] :width 1 :stroke (:ink (:th @st))}] :layer 1)))
+                (trace! st x y))
+        :down (cond (= 2 count) (back! st)
+                    (and (= 1 button) (inside? scene x y)) (swap! st assoc :drag [[x y] [x y]]))
+        :up (when drag
+              (swap! st dissoc :drag)
+              (let [[[x0 y0] [x1 y1]] drag]
+                (if (and (> (abs (- x1 x0)) 5) (> (abs (- y1 y0)) 5))
+                  (zoom! st (vec (sort [(data-x scene x0) (data-x scene x1)]))
+                         (vec (sort [(data-y scene y0) (data-y scene y1)])))
+                  (ui/draw! (:win @st) [] :layer 1))))
+        :key (cond (#{\+ \=} char) (scale! st 0.5)
+                   (= \- char) (scale! st 2.0)
+                   (= \0 char) (zoom! st [-10.0 10.0] nil)
+                   (= :escape key) (back! st))
+        :left (ui/draw! (:win @st) [] :layer 1)
+        :text (when-let [f (:on-text @st)] (f st (ui/entry-text (:win @st))))
+        :closed (when-let [a (:watched @st)] (remove-watch a st))
+        nil))))
+
+(defn show
+  "A window graphing f -- a function of one double, a vector of them, or
+  an atom holding either, redrawn whenever it changes -- and answers the
+  window's state (an atom; its :win is the clotran.ui window). Options:
+  :x [xmin xmax] (-10..10), :y [ymin ymax] (the curves' own), :theme (as
+  graph-svg's), :title, :width and :height (600 by 400); :on-text, a
+  function of the state and the text, gives the window a text field above
+  the graph and is called with its text as it changes."
+  [f & {:keys [x y theme title width height on-text] :or {x [-10 10] width 600 height 400}}]
+  (let [th (theme/theme (or theme (theme/default)))
+        st (atom {:src f :x (mapv double x) :y y :size [width height] :th th :history [] :on-text on-text})
+        win (ui/window {:title (or title "graph") :width width :height height :entry (boolean on-text)
+                         :on-event (on-event st)})]
+    (swap! st assoc :win win)
+    (when-not (or (fn? f) (vector? f))
+      (swap! st assoc :watched f)
+      (add-watch f st (fn [_ _ _ _] (redraw! st))))
+    (redraw! st)
+    st))

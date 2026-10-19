@@ -1,0 +1,60 @@
+(ns clotran.plot.calc
+  "A graphing calculator, simple enough for a child: one window, a text
+  field on top, the graph below. Type an expression in x -- (* x x),
+  (sin x), several at once: (sin x) (cos x) -- and the graph follows as
+  you type; while what is typed is not an expression yet, the last graph
+  stays and the line under the field says why. sin, cos, tan, sqrt, exp,
+  log, pow, PI, E and the rest of clojure.math are there by name. Trace
+  and zoom as in every graph window (clotran.plot.window).
+
+    clotran -m clotran.plot.calc        or, at the REPL, (calc/run)"
+  (:require [clojure.string :as str]
+            [clotran.plot.window :as window]
+            [clotran.ui :as ui]))
+
+(def ^:private calc-ns
+  ;; where a typed expression is read and evaluated: clojure.core and
+  ;; clojure.math by their plain names
+  (delay (let [n (create-ns 'clotran.plot.calc.user)]
+           (binding [*ns* n] (eval '(clojure.core/refer-clojure)) (eval '(require '[clojure.math :refer :all])))
+           n)))
+
+(defn functions
+  "The functions of x the text spells, one per form in it, each checked at
+  x = 1.0 to answer a number; throws with a message a person can read
+  otherwise."
+  [text]
+  (when (str/blank? text) (throw (ex-info "Type an expression in x, like (* x x) or (sin x)" {})))
+  (let [forms (try (read-string (str "[" text "\n]"))
+                   (catch :default _ (throw (ex-info "Not finished yet: check the brackets ( )" {}))))]
+    (when (empty? forms) (throw (ex-info "Type an expression in x, like (* x x) or (sin x)" {})))
+    (mapv (fn [form]
+            (let [f (try (binding [*ns* @calc-ns] (eval (list 'fn ['x] form)))
+                         (catch :default e (throw (ex-info (str "I don't understand " (pr-str form) ": " (ex-message e)) {}))))
+                  v (try (f 1.0) (catch :default e (throw (ex-info (str (pr-str form) " at x = 1: " (ex-message e)) {}))))]
+              (when-not (number? v) (throw (ex-info (str (pr-str form) " is not a number: it gives " (pr-str v)) {})))
+              f))
+          forms)))
+
+(defn- typed! [src]
+  (fn [st text]
+    (try (reset! src (functions text))
+         (ui/set-text! (:win @st) :label (str "y = " (str/trim text)))
+         (catch :default e (ui/set-text! (:win @st) :label (ex-message e))))))
+
+(defn run
+  "The calculator window, starting from the expression start ((sin x));
+  answers the window's state. Options as clotran.plot.window/show's."
+  [& {:keys [start] :or {start "(sin x)"} :as opts}]
+  (let [src (atom (functions start))
+        st (apply window/show src :title "graphing calculator" :height 480 :on-text (typed! src)
+                  (mapcat identity (dissoc opts :start)))]
+    (ui/set-text! (:win @st) :entry start)
+    (ui/set-text! (:win @st) :label (str "y = " start))
+    st))
+
+(defn -main
+  "clotran -m clotran.plot.calc: the calculator, until its window closes."
+  [& _]
+  (run)
+  (ui/wait))
