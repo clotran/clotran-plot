@@ -52,8 +52,14 @@ the theme's colormap, its triangles lit as the SVG shades its cells. No
 tick labels in the 3D view yet.
 
 Today this needs a clotran with `fortran/main-thread*` (core branch
-`feat/ui-main-thread`, until it merges), and on Windows MSYS2's UCRT64
-compilers to build clotran-ui the first time.
+`feat/ui-main-thread`, until it merges). No compiler is needed: where
+there is none, clotran-ui fetches its native library prebuilt.
+
+**On a Windows PC with nothing else:** install clotran (`irm
+https://raw.githubusercontent.com/clotran/clotran/main/install.ps1 | iex`
+in PowerShell), download `graphing-calculator.zip` from this repository's
+releases, unzip it, and double-click `Graphing Calculator.cmd`. No git,
+no MSYS2 (`windows/make-zip.bb` makes the zip).
 `test/window_check.bb` opens real windows, drives them with events as a
 person would, and checks 16 things: the window, its pixels, trace, zoom,
 `+`, going back, resizing, a live atom, three curves, the calculator, the
