@@ -65,7 +65,8 @@
   (locking st
     (let [{:keys [win src x y size th]} @st
           fs (fns-of src)
-          scene (plot/graph (if (= 1 (count fs)) (first fs) fs) (x 0) (x 1) (cond-> {:size size} y (assoc :y y)))]
+          scene (plot/graph (if (= 1 (count fs)) (first fs) fs) (x 0) (x 1)
+                            (cond-> (assoc (select-keys @st [:x-ticks :y-ticks]) :size size) y (assoc :y y)))]
       (swap! st assoc :scene scene)
       (ui/draw! win (ui-marks (marks/marks scene th) th) :font (family (:font th)))
       (ui/draw! win [] :layer 1))))
@@ -119,6 +120,11 @@
         cx (/ (+ a b) 2) cy (/ (+ c d) 2) hx (* k (/ (- b a) 2)) hy (* k (/ (- d c) 2))]
     (zoom! st [(- cx hx) (+ cx hx)] [(- cy hy) (+ cy hy)])))
 
+(def ^:private graph-window
+  ;; the one graph window show draws in, while it is open: a REPL session
+  ;; keeps its graph in one place, as a TI-85 has one screen
+  (atom nil))
+
 (defn- on-event [st]
   (fn [{:keys [type x y held button count char key width height]}]
     (let [{:keys [scene drag]} @st]
@@ -145,20 +151,41 @@
                    (= :escape key) (back! st))
         :left (ui/draw! (:win @st) [] :layer 1)
         :text (when-let [f (:on-text @st)] (f st (ui/entry-text (:win @st))))
-        :closed (when-let [a (:watched @st)] (remove-watch a st))
+        :closed (do (when-let [a (:watched @st)] (remove-watch a st))
+                    (compare-and-set! graph-window st nil))
         nil))))
 
+(declare open-window)
+
 (defn show
-  "A window graphing f -- a function of one double, a vector of them, or
+  "The graph window, drawing f -- a function of one double, a vector of them, or
   an atom holding either, redrawn whenever it changes -- and answers the
   window's state (an atom; its :win is the clotran.ui window). Options:
   :x [xmin xmax] (-10..10), :y [ymin ymax] (the curves' own), :theme (as
-  graph-svg's), :title, :width and :height (600 by 400); :on-text, a
+  graph-svg's), :x-ticks and :y-ticks (as clotran.plot/graph's: data, kept
+  through zooms), :title, :width and :height (600 by 400); :on-text, a
   function of the state and the text, gives the window a text field above
-  the graph and is called with its text as it changes."
-  [f & {:keys [x y theme title width height on-text] :or {x [-10 10] width 600 height 400}}]
+  the graph and is called with its text as it changes. While a graph
+  window is open, show draws in it again -- one window, brought to the
+  front -- and opens one only when there is none; a calculator (:on-text)
+  has its own."
+  [f & {:keys [x y x-ticks y-ticks theme title width height on-text] :or {x [-10 10] width 600 height 400}}]
+  (if-let [st (when-let [st (and (not on-text) @graph-window)] (when (ui/open? (:win @st)) st))]
+    ;; the open graph window, drawn again with f: its size stays
+    (do (when-let [a (:watched @st)] (remove-watch a st))
+        (swap! st assoc :src f :x (mapv double x) :y y :x-ticks x-ticks :y-ticks y-ticks :history [] :watched nil
+               :th (theme/theme (or theme (theme/default))))
+        (when-not (or (fn? f) (vector? f))
+          (swap! st assoc :watched f)
+          (add-watch f st (fn [_ _ _ _] (redraw! st))))
+        (redraw! st)
+        (ui/front! (:win @st))
+        st)
+    (open-window f x y x-ticks y-ticks theme title width height on-text)))
+
+(defn- open-window [f x y x-ticks y-ticks theme title width height on-text]
   (let [th (theme/theme (or theme (theme/default)))
-        st (atom {:src f :x (mapv double x) :y y :size [width height] :th th :history [] :on-text on-text})
+        st (atom {:src f :x (mapv double x) :y y :x-ticks x-ticks :y-ticks y-ticks :size [width height] :th th :history [] :on-text on-text})
         win (ui/window {:title (or title "graph") :width width :height height :entry (boolean on-text)})]
     (swap! st assoc :win win)
     ;; the handler once :win is known; it is handed the events before it (its size)
@@ -167,6 +194,7 @@
       (swap! st assoc :watched f)
       (add-watch f st (fn [_ _ _ _] (redraw! st))))
     (redraw! st)
+    (when-not on-text (reset! graph-window st))
     st))
 
 (defn show3d

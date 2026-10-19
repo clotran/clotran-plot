@@ -122,6 +122,8 @@
          [y0 y1]))
 
 (check "several" (= (res :three) [3 true]) (res :three))
+(check "reused" (= (res :reused) [true 1 1 [0.0 50.0 100.0]]) (res :reused))
+(check "refused" (= (res :refused) [true 1]) (res :refused))
 (check "calc" (and (= (res :calc-square) [[0.0 100.0] true])
                    (= (res :calc-unfinished) [[0.0 100.0] true])
                    (= (res :calc-two) [2 true]))

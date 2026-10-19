@@ -65,6 +65,13 @@
 (ui/inject! w {:type :resize :width 800 :height 500})
 (settle #(= [800 500] (:size (:scene @st))))
 (rec [:resize (:size (:scene @st)) (:box (:scene @st))])
+;; one graph window: the next graph draws in this one, and a thing that
+;; is not a function of x is refused before any window is touched
+(def st-b (plot/y= (* x x) :y-ticks [0 50 100]))
+(rec [:reused (identical? st st-b) (ui/open-count) (count (:curves (:scene @st-b))) (:y-ticks (:scene @st-b))])
+(rec [:refused (try (plot/show #(%)) :not-refused
+                    (catch :default e (boolean (re-find #"at x = 1" (str (ex-message e))))))
+      (ui/open-count)])
 (ui/close! w)
 
 ;; live: a graph of an atom redraws when it changes
