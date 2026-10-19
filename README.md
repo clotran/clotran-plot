@@ -36,25 +36,34 @@ today they agree bit for bit.
     (require '[clotran.plot :as plot] '[clojure.math :as m])
     (plot/graph-svg #(* % %) "parabola.svg")          ; x from -10 to 10
     (plot/graph-svg m/tan "tan.svg" :x [-5 5])
+    (plot/graph-svg [m/sin m/cos #(/ % 4)] "three.svg")   ; one colour each
+    (plot/graph-svg m/exp "exp.svg" :theme :light)    ; for a paper
     (plot/graph m/sin 0 10)     ; the scene: plain data, nothing drawn
 
-`graph` takes a function of one double and returns a scene: the x and y
-ranges, their ticks, and the curve as polylines in data units.
-`graph-svg` writes the scene as an SVG of 600 by 400 pixels. The curve
-is sampled as Mathematica's Plot samples one (`clotran.plot.sample`): 50
-even points, then intervals halved, up to 6 times, wherever the line
-bends by more than 5 degrees on screen. The line is broken at poles and
+`graph` takes a function of one double, or a vector of them, and returns
+a scene: the x and y ranges, their ticks, and each curve as polylines in
+data units. `graph-svg` writes the scene as an SVG of 600 by 400 pixels.
+It has two themes. The default, `:dark`, is for screens and is inspired
+by Manim's look: a near-black ground, axes through the origin with arrow
+heads, a faint blue grid, Manim's colours in turn, and serif labels with
+true minus signs. `:light` has a white ground and a frame, for papers.
+
+The curve is sampled as Mathematica's Plot samples one
+(`clotran.plot.sample`): 50 even points, then intervals halved, up to 6
+times, wherever the line bends by more than 5 degrees on screen. The line is broken at poles and
 jumps, not joined across them. The y range is the whole curve's unless
 it runs off to a pole; then it is the middle 95% of the curve, so 1/x
 shows -2..2 and not -200..200. Either way it is rounded out to its
 ticks.
 
-`test/plot_check.bb` checks x^2, x^3, sin, 1/x, e^x, tan and floor. Every
+`test/plot_check.bb` checks x^2, x^3, sin, 1/x, e^x, tan, floor, and sin,
+cos and x/4 together, in each theme (`test/run.sh` runs both). Every
 sample point lies on the function, as clj computes it. No line crosses a
 pole or a jump. The curve breaks into exactly as many pieces as the
 function has. At 3000 random x the drawn line is within a pixel of the
 true curve. The y ranges are the expected ones, and each SVG is
-well-formed. The example SVGs land in `test/out/`.
+well-formed, with the theme's colours, ground, axes and minus signs.
+The example SVGs land in `test/out/dark/` and `test/out/light/`.
 
 ## License
 

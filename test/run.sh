@@ -4,4 +4,5 @@
 set -e
 cd "$(dirname "$0")/.."
 bb test/ticks_oracle.bb
-bb test/plot_check.bb
+bb test/plot_check.bb dark
+bb test/plot_check.bb light
