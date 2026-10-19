@@ -1,0 +1,172 @@
+(ns clotran.plot.ticks
+  "Tick values for an axis by the extended Wilkinson algorithm (Talbot,
+  Lin and Hanrahan, \"An Extension of Wilkinson's Algorithm for
+  Positioning Tick Labels on Axes\", InfoVis 2010).
+
+  A port of R's labeling::extended (labeling 0.4.3), the oracle: every
+  arithmetic step is done in R's order, so the ticks agree with R's to
+  the last bit (test/ticks_oracle.bb checks it). Candidate tick sets
+  lmin, lmin+step, .., lmax with step = j*q*10^z are scored for
+  simplicity, coverage of the data, density near m ticks and legibility
+  (constant, as in R), weighted by w; the best score wins. The search
+  stops once an upper bound on the score of what is left falls below the
+  best found."
+  (:require [clojure.math :as m]))
+
+(def ^:private eps
+  "R's .Machine$double.eps * 100."
+  (* (m/ulp 1.0) 100))
+
+(def ^:private sqrt-xmax
+  "R's sqrt(.Machine$double.xmax)."
+  (m/sqrt 1.7976931348623157E308))
+
+(defn- r-mod
+  "R's %% on doubles (myfmod in arithmetic.c): the result takes the sign
+  of y."
+  [x y]
+  (if (and (> (* (abs y) (m/ulp 1.0)) 1) (<= (abs x) (abs y)))
+    (cond (== (abs x) (abs y)) 0.0
+          (or (and (neg? x) (pos? y)) (and (neg? y) (pos? x))) (+ x y)
+          :else x)
+    (let [t (- x (* (m/floor (/ x y)) y))]
+      (- t (* (m/floor (/ t y)) y)))))
+
+(defn- seq-length
+  "R's seq(from, to, length.out = n) for doubles from <= to."
+  [from to n]
+  (cond (<= n 0) []
+        (== n 1) [from]
+        (== n 2) [from to]
+        (== from to) (vec (repeat n from))
+        :else (let [n1 (dec n)
+                    del (- to from)]
+                (if (infinite? del)
+                  (let [f (/ from 4) t (/ to 4) d (/ (- t f) n1)]
+                    (mapv #(* 4 %) (concat [f] (map #(+ f (* % d)) (range 1 n1)) [t])))
+                  (let [d (/ del n1)]
+                    (vec (concat [from] (map #(+ from (* % d)) (range 1 n1)) [to])))))))
+
+(defn- seq-by
+  "R's seq(from, to, by) for doubles from < to and by > 0."
+  [from to by]
+  (let [del (- to from)]
+    (if (< (/ (abs del) (max (abs to) (abs from))) eps)
+      [from]
+      (let [n (long (+ (/ del by) 1e-10))]
+        (mapv #(min (+ from (* % by)) to) (range (inc n)))))))
+
+(defn- simplicity [i n j lmin lmax lstep]
+  (let [v (if (and (or (< (r-mod lmin lstep) eps)
+                       (< (- lstep (r-mod lmin lstep)) eps))
+                   (<= lmin 0) (>= lmax 0))
+            1 0)]
+    (+ (- (- 1 (/ (double (dec i)) (dec n))) j) v)))
+
+(defn- simplicity-max [i n j]
+  (+ (- (- 1 (/ (double (dec i)) (dec n))) j) 1))
+
+(defn- coverage [dmin dmax lmin lmax]
+  (let [r (- dmax dmin) a (- dmax lmax) b (- dmin lmin) c (* 0.1 r)]
+    (- 1 (/ (* 0.5 (+ (* a a) (* b b))) (* c c)))))
+
+(defn- coverage-max [dmin dmax span]
+  (let [r (- dmax dmin)]
+    (if (> span r)
+      (let [h (/ (- span r) 2) c (* 0.1 r)]
+        (- 1 (/ (* 0.5 (+ (* h h) (* h h))) (* c c))))
+      1.0)))
+
+(defn- density [k m dmin dmax lmin lmax]
+  (let [r (/ (double (dec k)) (- lmax lmin))
+        rt (/ (double (dec m)) (- (max lmax dmax) (min dmin lmin)))]
+    (- 2 (max (/ r rt) (/ rt r)))))
+
+(defn- density-max [k m]
+  (if (>= k m) (- 2 (/ (double (dec k)) (dec m))) 1.0))
+
+;; The search, one fn per loop of R's extended. best is [score lmin lmax
+;; lstep]; each fn returns the best after its loop.
+
+(defn- search-z
+  "The z loop: step = j*q*10^z from the smallest z that can fit k ticks,
+  each start lmin = start*step/j that can cover the data, until the
+  coverage bound falls below the best."
+  [{:keys [dmin dmax m w1 w2 w3 w4 only-loose]} i n q j k sm dm best]
+  (loop [z (m/ceil (m/log10 (/ (/ (/ (- dmax dmin) (+ k 1)) j) q))) best best]
+    (let [step (* (* j q) (m/pow 10 z))
+          cm (coverage-max dmin dmax (* step (- k 1)))]
+      (if (< (+ (+ (+ (* w1 sm) (* w2 cm)) (* w3 dm)) w4) (best 0))
+        best
+        (let [min-start (- (* (m/floor (/ dmax step)) j) (* (- k 1) j))
+              max-start (* (m/ceil (/ dmin step)) j)]
+          (recur
+           (+ z 1)
+           (reduce
+            (fn [best start]
+              (let [lmin (* start (/ step j))
+                    lmax (+ lmin (* step (- k 1)))
+                    s (simplicity i n j lmin lmax step)
+                    c (coverage dmin dmax lmin lmax)
+                    g (density k m dmin dmax lmin lmax)
+                    score (+ (+ (+ (* w1 s) (* w2 c)) (* w3 g)) (* w4 1.0))]
+                (if (and (> score (best 0))
+                         (or (not only-loose) (and (<= lmin dmin) (>= lmax dmax))))
+                  [score lmin lmax step]
+                  best)))
+            best
+            (range min-start (+ max-start 0.5) 1.0))))))))
+
+(defn- search-k
+  "The k loop: k = 2, 3, .. ticks until the density bound falls below
+  the best."
+  [{:keys [m w1 w2 w3 w4] :as o} i n q j sm best]
+  (loop [k 2 best best]
+    (let [dm (density-max k m)]
+      (if (< (+ (+ (+ (* w1 sm) w2) (* w3 dm)) w4) (best 0))
+        best
+        (recur (inc k) (search-z o i n q j k sm dm best))))))
+
+(defn- search
+  "The j and q loops: j = 1, 2, .. (a step skipping j-1 of every j nice
+  values), each q of Q, until the simplicity bound falls below the
+  best."
+  [{:keys [Q w1 w2 w3 w4] :as o}]
+  (let [n (count Q)]
+    (loop [j 1 best [-2.0]]
+      (let [r (reduce (fn [best [i q]]
+                        (let [sm (simplicity-max i n j)]
+                          (if (< (+ (+ (+ (* w1 sm) w2) w3) w4) (best 0))
+                            (reduced (with-meta best {:done true}))
+                            (search-k o i n q j sm best))))
+                      best
+                      (map vector (range 1 (inc n)) Q))]
+        (if (:done (meta r)) r (recur (inc j) r))))))
+
+(defn extended
+  "The ticks for data spanning dmin..dmax, about m of them, as a vector
+  of doubles: R's labeling::extended(dmin, dmax, m, Q, only.loose, w).
+  Q is the nice step multipliers, most preferred first (default
+  [1 5 2 2.5 4 3]); w the weights of simplicity, coverage, density and
+  legibility (default [0.25 0.2 0.5 0.05]); with :only-loose true the
+  ticks must cover dmin..dmax. A range narrower than 100 ulps of 1, or
+  wider than the square root of the largest double, gets m evenly spaced
+  values from dmin to dmax, as in R."
+  ([dmin dmax m] (extended dmin dmax m {}))
+  ([dmin dmax m {:keys [Q w only-loose] :or {Q [1 5 2 2.5 4 3]
+                                             w [0.25 0.2 0.5 0.05]
+                                             only-loose false}}]
+   (let [[dmin dmax] (map double (if (> dmin dmax) [dmax dmin] [dmin dmax]))]
+     (if (or (< (- dmax dmin) eps) (> (- dmax dmin) sqrt-xmax))
+       (seq-length dmin dmax m)
+       (let [[w1 w2 w3 w4] w
+             [_ lmin lmax lstep] (search {:dmin dmin :dmax dmax :m m :Q Q
+                                          :w1 w1 :w2 w2 :w3 w3 :w4 w4
+                                          :only-loose only-loose})]
+         (seq-by lmin lmax lstep))))))
+
+(defn ticks
+  "The ticks for data spanning dmin..dmax: (extended dmin dmax 5), five
+  being the m ggplot2 asks labeling for."
+  [dmin dmax]
+  (extended dmin dmax 5))
