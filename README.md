@@ -19,11 +19,12 @@ become, and in what order, is [PLAN.md](PLAN.md).
 
 ## In a window
 
-Name it in your project's `deps.edn`, start `clotran` there, and a plot
-opens its own window:
+Name it in your project's `deps.edn` (`clotran new` writes this line,
+commented out), run `clotran deps` to fetch it, start `clotran` there, and a
+plot opens its own window:
 
     {:deps {clotran/clotran-plot {:git/url "https://github.com/clotran/clotran-plot"
-                                  :git/sha "4c4f773b15c6f4eced04097dfd7fc37989aa6816"}}}
+                                  :git/sha "a89794985d9a26c783c03a98ee7d84f4b802ce82"}}}
 
     (require '[clotran.plot :as plot] '[clojure.math :as m])
     (plot/show m/sin)                        ; a window: sin x over -10..10
@@ -57,10 +58,10 @@ The mesh (`clotran.plot.mesh`) is the SVG surface's grid, its colours from
 the theme's colormap, its triangles lit as the SVG shades its cells. No
 tick labels in the 3D view yet.
 
-This needs clotran 1.0.0-rc.7 or later. No compiler and no git are
+This needs clotran 1.0.0-rc.8 or later. No compiler and no git are
 needed: where there is no C compiler, clotran-ui fetches its native
 library prebuilt, and where there is no git, clotran fetches a library
-as GitHub's archive of its sha (the release after rc.7).
+as GitHub's archive of its sha.
 
 `test/window_check.bb` opens real windows, drives them with events as a
 person would, and checks 16 things: the window, its pixels, trace, zoom,
