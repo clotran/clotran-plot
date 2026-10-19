@@ -159,9 +159,10 @@
   [f & {:keys [x y theme title width height on-text] :or {x [-10 10] width 600 height 400}}]
   (let [th (theme/theme (or theme (theme/default)))
         st (atom {:src f :x (mapv double x) :y y :size [width height] :th th :history [] :on-text on-text})
-        win (ui/window {:title (or title "graph") :width width :height height :entry (boolean on-text)
-                         :on-event (on-event st)})]
+        win (ui/window {:title (or title "graph") :width width :height height :entry (boolean on-text)})]
     (swap! st assoc :win win)
+    ;; the handler once :win is known; it is handed the events before it (its size)
+    (ui/on-event! win (on-event st))
     (when-not (or (fn? f) (vector? f))
       (swap! st assoc :watched f)
       (add-watch f st (fn [_ _ _ _] (redraw! st))))

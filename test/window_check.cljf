@@ -29,6 +29,8 @@
 (settle #(:scene @st))
 (def w (:win @st))
 (rec [:opened w (ui/open-count)])
+(settle #(= (:size (:scene @st)) (mapv long (ui/area-size w))))
+(rec [:sizes-sin (:size (:scene @st)) (ui/area-size w)])
 (rec [:capture (ui/capture w (img "window-sin"))])
 (rec [:snapshot (ui/snapshot w 600 400 (img "snapshot-sin")) (:box (:scene @st)) (:x-range (:scene @st)) (:y-range (:scene @st))])
 
@@ -79,6 +81,8 @@
 ;; several at once
 (def st3 (plot/show [m/sin m/cos #(/ % 4)] :title "three"))
 (settle #(:scene @st3))
+(settle #(= (:size (:scene @st3)) (mapv long (ui/area-size (:win @st3)))))
+(rec [:sizes-three (:size (:scene @st3)) (ui/area-size (:win @st3))])
 (rec [:three (count (:curves (:scene @st3))) (ui/capture (:win @st3) (img "window-three"))])
 (ui/close! (:win @st3))
 
@@ -86,6 +90,7 @@
 (require '[clotran.plot.calc :as calc])
 (def c (calc/run))
 (settle #(:scene @c))
+(settle #(= (:size (:scene @c)) (mapv long (ui/area-size (:win @c)))))
 (defn type! [s] (ui/set-text! (:win @c) :entry s) (ui/inject! (:win @c) {:type :text}))
 (type! "(* x x)")
 (settle #(= [0.0 100.0] (:y-range (:scene @c))))
@@ -98,6 +103,7 @@
 (settle #(= 2 (count (:curves (:scene @c)))))
 (clotran.host.thread/sleep 300)
 (rec [:calc-two (count (:curves (:scene @c))) (ui/capture (:win @c) (img "calc-two"))])
+(rec [:sizes-calc (:size (:scene @c)) (ui/area-size (:win @c))])
 (ui/close! (:win @c))
 
 ;; 3D on the GPU: a ripple, drawn offscreen and as shown, turned by a

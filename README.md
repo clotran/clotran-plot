@@ -55,12 +55,14 @@ Today this needs a clotran with `fortran/main-thread*` (core branch
 `feat/ui-main-thread`, until it merges), and on Windows MSYS2's UCRT64
 compilers to build clotran-ui the first time.
 `test/window_check.bb` opens real windows, drives them with events as a
-person would, and checks 14 things: the window, its pixels, trace, zoom,
+person would, and checks 16 things: the window, its pixels, trace, zoom,
 `+`, going back, resizing, a live atom, three curves, the calculator, the
-3D view and turning it, and that every window closes and the program
+3D view and turning it, that what each window shows has exactly its own
+curves (by their colours) at its own size, and that every window closes and the program
 ends by itself. On Windows, test/window_check.cljf runs on the box and
-`bb test/window_check.bb --from DIR` judges what it wrote: 14 of 14 there
-too.
+`bb test/window_check.bb --from DIR` judges what it wrote: 15 of 15 there -- the
+check of what windows show is skipped, since the box's session has no
+display and its windows' own pictures are black.
 
 
 ## Ticks

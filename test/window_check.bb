@@ -22,6 +22,10 @@
 ;;             "(* x" keeps the last graph; two forms are two curves
 ;;   closed    no window left, and the program ends by itself (status 0)
 ;;
+;;   drawn     what each window SHOWS (its own picture of itself) has a curve
+;;             colour exactly when its scene has that curve: sin, the three,
+;;             the calculator's (* x x) and (sin x) (/ x 4)
+;;   sizes     every scene was made at its drawing area's size
 ;;   gpu       3D on the GPU (Metal; Vulkan on Windows): the camera starts at
 ;;             clotran.plot.surface's view (-35, 28, zoom 1); the offscreen
 ;;             picture has the dark ground at its corner and the surface
@@ -139,6 +143,33 @@
   (check "turned" (and ok (= -75.0 (:azimuth cam)) (= 8.0 (:elevation cam))
                        (< (abs (- (:zoom cam) (Math/exp 0.25))) 1e-4) (> differ 100))
          [cam differ]))
+
+;; what the window SHOWS against its scene: each curve colour of the dark
+;; palette is in the window's own picture exactly when the scene has that
+;; curve (a window that replayed another's picture showed a curve nobody
+;; asked for), and every scene was made at its area's size (one that was
+;; not was drawn clipped)
+(def palette [[0x58 0xC4 0xDD] [0xFF 0xFF 0x00] [0x83 0xC1 0x67]])
+(defn colour-counts
+  "Pixels near each palette colour in the picture, or nil when it is black
+  throughout -- a window in a session with no display draws nothing."
+  [f]
+  (let [{:keys [rgb w h]} (bmp f)
+        px (for [x (range w) y (range h)] (rgb x y))]
+    (when (some #(> (apply max %) 24) px)
+      (mapv (fn [c] (count (filter #(close-to? % c 30) px))) palette))))
+
+(def drawn-cases [["window-sin" [true false false]] ["window-three" [true true true]]
+                  ["calc-square" [true false false]] ["calc-two" [true true false]]])
+(def drawn (for [[name want] drawn-cases] [name want (colour-counts (pic name))]))
+(if (every? (fn [[_ _ n]] (nil? n)) drawn)
+  (println "drawn    skipped: every window picture is black (no display in this session); not counted")
+  (check "drawn" (every? (fn [[_ want n]] (and n (every? true? (map (fn [w k] (if w (>= k 40) (< k 5))) want n)))) drawn)
+         (mapv (fn [[name _ n]] [name n]) drawn)))
+
+(check "sizes" (every? (fn [k] (let [[scene area] (res k)] (= scene (mapv long area))))
+                       [:sizes-sin :sizes-three :sizes-calc])
+       (mapv res [:sizes-sin :sizes-three :sizes-calc]))
 
 (doseq [[n ok d] @checks] (println (format "%-8s %s %s" n (if ok "ok" "FAILED") (pr-str d))))
 (let [good (count (filter second @checks))]
