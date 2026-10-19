@@ -43,10 +43,11 @@ today they agree bit for bit.
 `graph` takes a function of one double, or a vector of them, and returns
 a scene: the x and y ranges, their ticks, and each curve as polylines in
 data units. `graph-svg` writes the scene as an SVG of 600 by 400 pixels.
-It has two themes. The default, `:dark`, is for screens and is inspired
-by Manim's look: a near-black ground, axes through the origin with arrow
-heads, a faint blue grid, Manim's colours in turn, and serif labels with
-true minus signs. `:light` has a white ground and a frame, for papers.
+Its look is a theme (see Themes below). The default, `:dark`, is for
+screens and is inspired by Manim's look: a near-black ground, axes
+through the origin with arrow heads, a faint blue grid, Manim's colours
+in turn, and serif labels with true minus signs. `:light` has a white
+ground and a frame, for papers.
 
 The curve is sampled as Mathematica's Plot samples one
 (`clotran.plot.sample`): 50 even points, then intervals halved, up to 6
@@ -64,6 +65,51 @@ function has. At 3000 random x the drawn line is within a pixel of the
 true curve. The y ranges are the expected ones, and each SVG is
 well-formed, with the theme's colours, ground, axes and minus signs.
 The example SVGs land in `test/out/dark/` and `test/out/light/`.
+
+## Themes
+
+A theme is a plain EDN map. The built-in ones are files themselves,
+[`dark.edn`](resources/clotran/plot/themes/dark.edn) and
+[`light.edn`](resources/clotran/plot/themes/light.edn). Make your own by
+naming a theme to start from and changing only the keys you want:
+
+    ;; paper.edn
+    {:extends :light
+     :background "#fbf8f1"
+     :palette ["#0b3c5d" "#b22222" "#2e8b57" "#6a3d9a"]}
+
+    (plot/graph-svg f "f.svg" :theme "paper.edn")          ; a file
+    (plot/graph-svg f "f.svg" :theme {:extends :dark :palette ["#ff00ff"]})
+
+| key             | value                                                         |
+|-----------------|---------------------------------------------------------------|
+| `:background`   | colour of the ground                                          |
+| `:axes`         | `:frame`: a box, with ticks and labels outside it on the left and bottom; `:origin`: axes through the origin (or along the nearer edge), with arrow heads and ticks across them |
+| `:ink`          | colour of the axes or frame, the ticks and the arrow heads    |
+| `:axis-width`   | their stroke width, above 0                                   |
+| `:zero-lines`   | colour of the lines x = 0 and y = 0, or `:none`               |
+| `:grid`         | colour of a line at every tick, or `:none`                    |
+| `:grid-opacity` | its opacity, 0 to 1                                           |
+| `:label-colour` | colour of the tick labels                                     |
+| `:font`         | their font-family, a CSS font stack                           |
+| `:font-size`    | their size, above 0                                           |
+| `:minus`        | the minus sign in labels: `"-"`, or `"\u2212"` as LaTeX sets it |
+| `:palette`      | the curves' colours, a non-empty vector, used in turn         |
+| `:stroke`       | the curves' stroke width, above 0                             |
+| `:extends`      | optional: a built-in's keyword, or an .edn file's path, relative to this file |
+
+A colour is hex (`#rgb`, `#rrggbb` or `#rrggbbaa`) or one of CSS 1's
+sixteen names (`black`, `white`, `red`, ...). Every key is required,
+unless the theme has `:extends`. An unknown key, a bad value, a missing
+key or a missing file is an error that names the key and the file. It
+never falls back to a default silently.
+
+**Your default.** If a `plot-theme.edn` file is in the directory clotran
+runs in (your project's root), it is the theme used when none is named.
+This is a file, not a `deps.edn` key, because it needs no `deps.edn` at
+all. `test/theme_check.bb` checks a custom theme, a palette-only
+override, the project default, and 18 malformed themes, each refused
+with the right message.
 
 ## License
 

@@ -42,7 +42,8 @@
 (when-not palette (println "theme is dark or light, not" theme) (System/exit 1))
 
 (def here (fs/parent (fs/absolutize *file*)))
-(def src (str (fs/normalize (fs/path here ".." "src"))))
+(def src (str (fs/normalize (fs/path here ".." "src")) java.io.File/pathSeparator
+              (fs/normalize (fs/path here ".." "resources"))))
 (def out (str (fs/path here "out" theme)))
 (def clotran (or (System/getenv "CLOTRAN")
                  (str (fs/normalize (fs/path here ".." ".." "clotran" "clotran")))))

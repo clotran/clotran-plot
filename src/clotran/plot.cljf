@@ -35,9 +35,10 @@
 
 (defn graph-svg
   "The graph of f (or of a vector of functions) written to path as SVG;
-  returns path. Options: :x [xmin xmax] (-10..10); :theme, :dark (the
-  default, for screens) or :light (for papers), as clotran.plot.svg's
-  themes."
-  [f path & {:keys [x theme] :or {x [-10 10] theme :dark}}]
-  (spit path (svg/svg (assoc (graph f (x 0) (x 1)) :theme theme)))
+  returns path. Options: :x [xmin xmax] (-10..10); :theme, a built-in's
+  keyword (:dark, for screens, or :light, for papers), the path of an
+  .edn file or a map, as clotran.plot.theme reads them -- by default
+  the project's plot-theme.edn if it has one, else :dark."
+  [f path & {:keys [x theme] :or {x [-10 10]}}]
+  (spit path (svg/svg (cond-> (graph f (x 0) (x 1)) theme (assoc :theme theme))))
   path)

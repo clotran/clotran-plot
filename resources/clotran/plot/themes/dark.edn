@@ -1,0 +1,15 @@
+;; clotran-plot's dark theme, for screens; inspired by Manim's look.
+;; The keys are clotran.plot.theme's (see its docstring or the README).
+{:background "#0f0f12"
+ :axes :origin
+ :ink "#d9d9d9"
+ :axis-width 1.5
+ :zero-lines :none
+ :grid "#29ABCA"
+ :grid-opacity 0.35
+ :label-colour "#d9d9d9"
+ :font "CMU Serif, Latin Modern Math, Cambria Math, Georgia, serif"
+ :font-size 14
+ :minus "\u2212"
+ :palette ["#58C4DD" "#FFFF00" "#83C167" "#FC6255" "#5CD0B3" "#9A72AC" "#FF862F"]
+ :stroke 2}

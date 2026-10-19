@@ -1,0 +1,15 @@
+;; clotran-plot's light theme, for papers.
+;; The keys are clotran.plot.theme's (see its docstring or the README).
+{:background "white"
+ :axes :frame
+ :ink "black"
+ :axis-width 1
+ :zero-lines "#bbb"
+ :grid :none
+ :grid-opacity 1
+ :label-colour "black"
+ :font "sans-serif"
+ :font-size 12
+ :minus "-"
+ :palette ["#1f6fb4" "#d1495b" "#2e933c" "#8c5fbf" "#e08a1e" "#3a3a3a"]
+ :stroke 1.5}

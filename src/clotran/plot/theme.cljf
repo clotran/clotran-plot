@@ -1,0 +1,119 @@
+(ns clotran.plot.theme
+  "A theme is the look of a picture, as data: a plain map, kept in an
+  .edn file or written inline. Every key is required, unless the theme
+  says :extends, a theme it is made from by overriding only some keys
+  (a plain merge, so a theme of just :extends and :palette works).
+
+    :background    colour of the ground
+    :axes          :frame -- a box with ticks and labels outside its
+                   left and bottom; or :origin -- axes through the origin
+                   (along the nearer edge when 0 is outside a range),
+                   arrow heads at their positive ends, ticks across them
+    :ink           colour of the axes or frame, ticks and arrow heads
+    :axis-width    their stroke width, a number above 0
+    :zero-lines    colour of the lines x = 0 and y = 0 inside the plot,
+                   or :none
+    :grid          colour of a line at every tick, or :none
+    :grid-opacity  its opacity, 0 to 1
+    :label-colour  colour of the tick labels
+    :font          their font-family, a CSS font stack
+    :font-size     their size, a number above 0
+    :minus         the minus sign in labels: \"-\", or \"\\u2212\" as LaTeX
+    :palette       the curves' colours, a non-empty vector, used in turn
+    :stroke        the curves' stroke width, a number above 0
+    :extends       (optional) a built-in theme's keyword, or a path to
+                   an .edn file, relative to this theme's own file
+
+  A colour is #rgb, #rrggbb or #rrggbbaa in hex, or one of CSS 1's
+  sixteen names (black, white, red, ..). A theme is named as :theme in
+  clotran.plot: a keyword, a built-in (resources/clotran/plot/themes:
+  :dark and :light); a string, the path of an .edn file; or a map. An
+  unknown key, a bad value, a missing key or a missing file is an error
+  naming the key and the theme's file -- never a silent default."
+  (:require [clojure.edn :as edn]
+            [clojure.string :as str]
+            [clotran.files :as io]))
+
+(def ^:private css1
+  #{"black" "silver" "gray" "white" "maroon" "red" "purple" "fuchsia"
+    "green" "lime" "olive" "yellow" "navy" "blue" "teal" "aqua"})
+
+(defn- colour? [x]
+  (and (string? x) (or (contains? css1 x) (some? (re-matches #"#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})" x)))))
+
+(defn- positive? [x] (and (number? x) (pos? x)))
+
+(def ^:private checks
+  "Each key's test, and what a good value is."
+  {:background [colour? "a colour"]
+   :axes [#{:frame :origin} ":frame or :origin"]
+   :ink [colour? "a colour"]
+   :axis-width [positive? "a number above 0"]
+   :zero-lines [#(or (= :none %) (colour? %)) "a colour or :none"]
+   :grid [#(or (= :none %) (colour? %)) "a colour or :none"]
+   :grid-opacity [#(and (number? %) (<= 0 % 1)) "a number from 0 to 1"]
+   :label-colour [colour? "a colour"]
+   :font [#(and (string? %) (not (str/blank? %))) "a font-family string"]
+   :font-size [positive? "a number above 0"]
+   :minus [#(and (string? %) (not= "" %)) "a non-empty string"]
+   :palette [#(and (vector? %) (seq %) (every? colour? %)) "a non-empty vector of colours"]
+   :stroke [positive? "a number above 0"]})
+
+(def ^:private ^:dynamic *via*
+  "The theme whose :extends is being read, for the message."
+  nil)
+
+(defn- fail [where msg]
+  (throw (ex-info (str "theme " where ": " msg (when *via* (str " (extended by " *via* ")")))
+                  {:theme where})))
+
+(defn- read-edn [s where]
+  (try (edn/read-string s)
+       (catch :default e (fail where (str "not EDN: " (ex-message e))))))
+
+(defn- dir-of [path] (if-let [i (str/last-index-of path "/")] (subs path 0 (inc i)) ""))
+
+(defn- layer
+  "The theme src names, read and checked key by key, and where it came
+  from: [map where]."
+  [src]
+  (let [[m where] (cond
+                    (keyword? src) (if-let [r (io/resource (str "clotran/plot/themes/" (name src) ".edn"))]
+                                     [(read-edn (slurp r) (str src)) (str src)]
+                                     (fail src "no such built-in theme"))
+                    (string? src) (if (.exists (io/file src))
+                                    [(read-edn (slurp src) src) src]
+                                    (fail src "no such file"))
+                    (map? src) [src "map"]
+                    :else (fail (pr-str src) "a theme is a keyword, a path or a map"))]
+    (when-not (map? m) (fail where "not a map"))
+    (doseq [[k v] (dissoc m :extends)]
+      (if-let [[ok? good] (checks k)]
+        (when-not (ok? v) (fail where (str k " is not " good ": " (pr-str v))))
+        (fail where (str "unknown key " k " (the keys are " (str/join " " (sort (keys checks))) " and :extends)"))))
+    (when-let [e (:extends m)]
+      (when-not (or (keyword? e) (string? e))
+        (fail where (str ":extends is not a theme's keyword or path: " (pr-str e)))))
+    [m where]))
+
+(defn- merged [src depth]
+  (when (> depth 16) (fail src ":extends goes more than 16 deep (a cycle?)"))
+  (let [[m where] (layer src)
+        e (:extends m)
+        e (if (and (string? e) (string? src) (not (str/starts-with? e "/"))) (str (dir-of src) e) e)]
+    [(merge (when e (first (binding [*via* where] (merged e (inc depth))))) (dissoc m :extends)) where]))
+
+(defn theme
+  "The full theme src names (a keyword, a path or a map; see the
+  namespace's docstring), its :extends merged in and every key checked."
+  [src]
+  (let [[m where] (merged src 0)
+        missing (remove (set (keys m)) (sort (keys checks)))]
+    (when (seq missing) (fail where (str "missing " (str/join " " missing))))
+    m))
+
+(defn default
+  "The theme used when none is named: the project's plot-theme.edn, in
+  the directory clotran runs in, if there is one; :dark otherwise."
+  []
+  (if (.exists (io/file "plot-theme.edn")) "plot-theme.edn" :dark))
