@@ -1,9 +1,11 @@
 #!/usr/bin/env bb
 ;; test/ticks_oracle.bb: clotran.plot.ticks/extended against R's
 ;; labeling::extended, the oracle, over hand-picked ranges and a seeded
-;; random set. Each range is asked of R and of clotran (interpreted, with
-;; CLOTRAN_PATH at this repo's src); they must give the same number of
-;; ticks, each equal within 1e-9 of the largest tick's magnitude.
+;; random set: the hand-picked ones with only.loose FALSE and TRUE, a
+;; third of the random ones TRUE. Each range is asked of R and of
+;; clotran (interpreted, with CLOTRAN_PATH at this repo's src); they must
+;; give the same number of ticks, each equal within 1e-9 of the largest
+;; tick's magnitude.
 ;;
 ;; Why a tolerance at all: the port does R's arithmetic in R's order, so
 ;; the ticks are normally the same bits. What may differ is the last bit
@@ -50,7 +52,7 @@
                       1 (* width (Math/pow 10 (* 6 (u))))
                       2 (- (* width (Math/pow 10 (* 6 (u))))))
                  [a b] (if (zero? (.nextInt r 8)) [(+ lo width) lo] [lo (+ lo width)])]
-             [(double a) (double b) (+ 2 (.nextInt r 11))])))))
+             [(double a) (double b) (+ 2 (.nextInt r 11)) (zero? (.nextInt r 3))])))))
 
 (defn sh [cmd ms]
   (let [proc (p/process cmd {:out :string :err :string :in ""
@@ -70,17 +72,17 @@
       (println who "gave" (count lines) "results for" n "ranges") (System/exit 1))
     (mapv #(mapv parse-double (rest (str/split (str/trim %) #"\s+"))) lines)))
 
-(let [cases (into fixed (random-cases (parse-long (or (first *command-line-args*) "500"))))
+(let [cases (into (into (mapv #(conj % false) fixed) (mapv #(conj % true) fixed)) (random-cases (parse-long (or (first *command-line-args*) "500"))))
       n (count cases)
       dir (fs/create-temp-dir {:prefix "ticks-oracle"})
       rfile (str (fs/path dir "cases.txt"))
       cfile (str (fs/path dir "ticks.cljf"))
-      _ (spit rfile (str/join (map (fn [[a b m]] (str (Double/toHexString (double a)) " " (Double/toHexString (double b)) " " m "\n")) cases)))
+      _ (spit rfile (str/join (map (fn [[a b m l]] (str (Double/toHexString (double a)) " " (Double/toHexString (double b)) " " m (if l " TRUE" " FALSE") "\n")) cases)))
       _ (spit cfile (str "(require '[clotran.plot.ticks :as t])\n"
-                         "(doseq [[a b m] '" (pr-str (mapv (fn [[a b m]] [(double a) (double b) m]) cases)) "]\n"
-                         "  (println (apply str \"T\" (map #(str \" \" (pr-str %)) (t/extended a b m)))))\n"))
+                         "(doseq [[a b m l] '" (pr-str (mapv (fn [[a b m l]] [(double a) (double b) m l]) cases)) "]\n"
+                         "  (println (apply str \"T\" (map #(str \" \" (pr-str %)) (t/extended a b m {:only-loose l})))))\n"))
       rout (sh [rscript "-e" (str "library(labeling); d <- read.table('" rfile "');"
-                                    "for (i in seq_len(nrow(d))) cat('T', sprintf('%.17g', extended(d[i,1], d[i,2], d[i,3])), '\\n')")]
+                                    "for (i in seq_len(nrow(d))) cat('T', sprintf('%.17g', extended(d[i,1], d[i,2], d[i,3], only.loose = d[i,4])), '\\n')")]
                  600000)
       cout (sh [clotran cfile] 600000)
       rs (parse rout n "R")

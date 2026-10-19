@@ -1,0 +1,159 @@
+(ns clotran.plot.sample
+  "A function of x sampled for drawing, as Mathematica's Plot samples
+  it: evenly spaced points first, then each interval beside a point
+  where the polyline bends by more than a few degrees -- measured in the
+  plot's pixels, not in data units -- halved, pass after pass, up to a
+  depth. The polyline is broken, not joined, where f is not finite and
+  across a jump or a pole. The y range is the whole curve's, unless a
+  side runs off to a pole; that side is then cut where the middle 95%
+  of the curve (by x) lies, so 1/x and tan x do not flatten the rest.
+  The range is rounded out to its extended-Wilkinson ticks."
+  (:require [clojure.math :as m]
+            [clotran.plot.ticks :as ticks]))
+
+(defn- value
+  "f at x as a double, or nil where it is not a finite number."
+  [f x]
+  (let [y (f x)]
+    (when (and (number? y) (not (NaN? (double y))) (not (infinite? (double y))))
+      (double y))))
+
+(defn- grid
+  "n evenly spaced x from a to b, both included."
+  [a b n]
+  (let [d (/ (- b a) (dec n))]
+    (mapv #(if (= % (dec n)) b (+ a (* % d))) (range n))))
+
+(defn- angle
+  "The turn at b, in radians, of the path a b c in pixel coordinates
+  (x scaled by sx, y by sy)."
+  [[ax ay] [bx by] [cx cy] sx sy]
+  (let [ux (* sx (- bx ax)) uy (* sy (- by ay))
+        vx (* sx (- cx bx)) vy (* sy (- cy by))]
+    (m/atan2 (abs (- (* ux vy) (* uy vx))) (+ (* ux vx) (* uy vy)))))
+
+(defn- refine
+  "One pass: every interval beside a point that turns by more than bend,
+  or with f finite at one end only, halved."
+  [f pts sx sy bend]
+  (let [n (count pts)
+        fin? #(some? ((pts %) 1))
+        turns? (fn [i] (and (< 0 i (dec n)) (fin? (dec i)) (fin? i) (fin? (inc i))
+                            (> (angle (pts (dec i)) (pts i) (pts (inc i)) sx sy) bend)))
+        split? (fn [i] (or (not= (fin? i) (fin? (inc i))) (turns? i) (turns? (inc i))))
+        out (reduce (fn [out i]
+                      (let [out (conj out (pts i))]
+                        (if (split? i)
+                          (let [x (/ (+ ((pts i) 0) ((pts (inc i)) 0)) 2)]
+                            (conj out [x (value f x)]))
+                          out)))
+                    [] (range (dec n)))]
+    (conj out (pts (dec n)))))
+
+(defn- climb
+  "The largest s*f found climbing from x0 (s*f there y0) between its
+  neighbours xl and xr, halving the bracket each of 60 steps: past any
+  bound at a pole, where a peak's value settles. ##Inf where f is
+  infinite; NaN counts as lowest."
+  [f s xl x0 y0 xr]
+  (let [g #(let [y (* s (double (f %)))] (if (NaN? y) ##-Inf y))]
+    (loop [k 0 xl xl x0 x0 y0 y0 xr xr]
+      (if (or (= k 60) (= y0 ##Inf))
+        y0
+        (let [ml (/ (+ xl x0) 2) yl (g ml)
+              mr (/ (+ x0 xr) 2) yr (g mr)]
+          (cond (and (> yl y0) (>= yl yr)) (recur (inc k) xl ml yl x0)
+                (> yr y0) (recur (inc k) x0 mr yr xr)
+                :else (recur (inc k) ml x0 y0 mr)))))))
+
+(defn- quantile
+  "The q-quantile of f's finite values over 1001 evenly spaced x, by
+  nearest rank, rounded toward the outside (up for q above 1/2)."
+  [f a b q]
+  (let [ys (vec (sort (keep #(value f %) (grid a b 1001))))
+        i (* q (dec (count ys)))]
+    (ys (long (if (> q 0.5) (m/ceil i) (m/floor i))))))
+
+(defn- y-extent
+  "The y extent [lo hi] of the finite points pts of f over a..b: each
+  side the points' extreme, unless climbing from that extreme passes 10
+  times its distance from the median, a pole -- then the quantile tail
+  (or 1 - tail) of f over a..b."
+  [f a b pts tail]
+  (let [fin (filterv #(some? (% 1)) pts)
+        ys (sort (map second fin))
+        med (nth ys (quot (count ys) 2))
+        side (fn [s q]
+               (let [i (apply max-key #(* s ((fin %) 1)) (range (count fin)))
+                     x #((fin (max 0 (min (dec (count fin)) %))) 0)
+                     y0 (* s ((fin i) 1))
+                     top (climb f s (x (dec i)) (x i) y0 (x (inc i)))]
+                 (if (> (- top (* s med)) (* 10 (- y0 (* s med))))
+                   (quantile f a b q)
+                   (* s y0))))]
+    [(side -1 tail) (side 1 (- 1 tail))]))
+
+(defn- y-axis
+  "[lo hi] rounded out to the extended-Wilkinson ticks, about 5 of them:
+  {:y-range [first-tick last-tick] :y-ticks ticks}. An empty or flat
+  extent is widened by 1 each way."
+  [[lo hi]]
+  (let [[lo hi] (if (< lo hi) [lo hi] [(- lo 1) (+ hi 1)])
+        t (ticks/extended lo hi 5 {:only-loose true})]
+    {:y-range [(first t) (peek t)] :y-ticks t}))
+
+(defn- jumps
+  "The indices i of the intervals pts[i]..pts[i+1] that cross a jump or
+  a pole, with y on the scale sy: rising or falling more than a pixel,
+  steeper than each finite neighbour, and either against both or 10
+  times steeper than both."
+  [pts sy]
+  (let [n (count pts)
+        slope (fn [i] (when (and (< -1 i (dec n)) ((pts i) 1) ((pts (inc i)) 1))
+                        (/ (- ((pts (inc i)) 1) ((pts i) 1)) (- ((pts (inc i)) 0) ((pts i) 0)))))]
+    (set (filter (fn [i]
+                   (when-let [s (slope i)]
+                     (let [ns (keep slope [(dec i) (inc i)])
+                           dy (* sy (- ((pts (inc i)) 1) ((pts i) 1)))]
+                       (and (> (abs dy) 1) (seq ns)
+                            (every? #(and (> (abs s) (abs %))
+                                          (or (<= (* s %) 0) (> (abs s) (* 10 (abs %)))))
+                                    ns)))))
+                 (range (dec n))))))
+
+(defn- polylines
+  "pts cut into runs of finite points, broken after each interval in
+  breaks."
+  [pts breaks]
+  (let [[runs run] (reduce (fn [[runs run] i]
+                             (let [p (pts i)]
+                               (cond (nil? (p 1)) [(cond-> runs (seq run) (conj run)) []]
+                                     (breaks (dec i)) [(cond-> runs (seq run) (conj run)) [p]]
+                                     :else [runs (conj run p)])))
+                           [[] []] (range (count pts)))]
+    (cond-> runs (seq run) (conj run))))
+
+(defn sample
+  "f sampled over xmin..xmax for a plot w by h pixels:
+  {:segments [[[x y] ..] ..] :y-range [lo hi] :y-ticks [..]}, each
+  segment a polyline to draw, finite throughout; f is called with
+  doubles. Options: :points, the even points to start from (50, as
+  Mathematica's PlotPoints); :depth, the passes that halve intervals
+  (6, its MaxRecursion); :bend, the turn in degrees that asks for a
+  halving (5); :tail, the share of the curve dropped beyond a pole on
+  each side (0.025); :w and :h, the pixels (520 by 340)."
+  ([f xmin xmax] (sample f xmin xmax {}))
+  ([f xmin xmax {:keys [points depth bend tail w h]
+                 :or {points 50 depth 6 bend 5 tail 0.025 w 520 h 340}}]
+   (let [[a b] (map double (sort [xmin xmax]))
+         sx (/ w (- b a))
+         rad (* bend (/ m/PI 180))
+         axis-of #(y-axis (if (some (fn [p] (p 1)) %) (y-extent f a b % tail) [-1.0 1.0]))
+         sy-of #(let [[lo hi] (:y-range %)] (/ h (- hi lo)))
+         pts0 (mapv #(vector % (value f %)) (grid a b points))
+         sy0 (sy-of (axis-of pts0))
+         pts (loop [d 0 pts pts0]
+               (let [pts' (if (< d depth) (refine f pts sx sy0 rad) pts)]
+                 (if (= (count pts') (count pts)) pts (recur (inc d) pts'))))
+         axis (axis-of pts)]
+     (assoc axis :segments (polylines pts (jumps pts (sy-of axis)))))))

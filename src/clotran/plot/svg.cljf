@@ -1,0 +1,96 @@
+(ns clotran.plot.svg
+  "A scene (clotran.plot/graph's) as SVG text: a frame around the plot
+  box, ticks and their labels on the left and bottom, the zero lines
+  where they fall inside, and each curve as polylines clipped to the
+  box, broken where the curve is."
+  (:require [clojure.math :as m]
+            [clojure.string :as str]))
+
+(def ^:private colours
+  "Y1, Y2, .. in turn."
+  ["#1f6fb4" "#d1495b" "#2e933c" "#8c5fbf" "#e08a1e" "#3a3a3a"])
+
+(defn- decimals
+  "The fewest decimals, at most 12, that show every tick exactly."
+  [ts]
+  (or (first (filter (fn [d] (every? #(let [v (* % (m/pow 10 d))]
+                                        (< (abs (- v (m/rint v))) (* 1e-6 (max 1 (abs v)))))
+                                     ts))
+                     (range 13)))
+      12))
+
+(defn labels
+  "Tick values as labels with the ticks' common decimals: 0.30000000000000004
+  among 0.1 steps is \"0.3\", and -0.0 or -1e-17 is \"0\". Each tick is
+  rounded to those decimals before format sees it, and a trailing dot
+  dropped: clotran formats %.0f as Fortran's F edit does, 10.0 as \"10.\"."
+  [ts]
+  (let [d (decimals ts) p (m/pow 10 d)]
+    (mapv #(let [r (/ (m/rint (* % p)) p)]
+             (str/replace (format (str "%." d "f") (if (zero? r) 0.0 r)) #"\.$" ""))
+          ts)))
+
+(defn- clip
+  "The part of the line p q inside the box [x0 y0 x1 y1], or nil
+  (Liang and Barsky, 1984)."
+  [[px py] [qx qy] [x0 y0 x1 y1]]
+  (let [dx (- qx px) dy (- qy py)
+        [t0 t1] (reduce (fn [[t0 t1 :as t] [p q]]
+                          (cond (nil? t) nil
+                                (zero? p) (when (>= q 0) t)
+                                :else (let [r (/ q p)]
+                                        (if (neg? p)
+                                          (when (<= r t1) [(max t0 r) t1])
+                                          (when (>= r t0) [t0 (min t1 r)])))))
+                        [0.0 1.0]
+                        [[(- dx) (- px x0)] [dx (- x1 px)] [(- dy) (- py y0)] [dy (- y1 py)]])]
+    (when t0
+      [[(+ px (* t0 dx)) (+ py (* t0 dy))] [(+ px (* t1 dx)) (+ py (* t1 dy))]])))
+
+(defn- runs
+  "A polyline in pixels clipped to box: the visible runs of points."
+  [pts box]
+  (let [[rs r] (reduce (fn [[rs r] [p q]]
+                         (if-let [[a b] (clip p q box)]
+                           (if (= (peek r) a) [rs (conj r b)] [(cond-> rs (seq r) (conj r)) [a b]])
+                           [(cond-> rs (seq r) (conj r)) []]))
+                       [[] []] (partition 2 1 pts))]
+    (cond-> rs (seq r) (conj r))))
+
+(defn- n2 [x] (format "%.2f" (double x)))
+
+(defn svg
+  "The scene as an SVG document, a string."
+  [{:keys [size box x-range y-range x-ticks y-ticks curves]}]
+  (let [[W H] size
+        [bx by bw bh] box
+        [xa xb] x-range [ya yb] y-range
+        px #(+ bx (* (- % xa) (/ bw (- xb xa))))
+        py #(- (+ by bh) (* (- % ya) (/ bh (- yb ya))))
+        line (fn [x1 y1 x2 y2 attrs]
+               (str "<line x1=\"" (n2 x1) "\" y1=\"" (n2 y1) "\" x2=\"" (n2 x2) "\" y2=\"" (n2 y2) "\" " attrs "/>"))
+        text (fn [x y anchor s]
+               (str "<text x=\"" (n2 x) "\" y=\"" (n2 y) "\" text-anchor=\"" anchor "\">" s "</text>"))
+        clipbox [bx by (+ bx bw) (+ by bh)]]
+    (str/join
+     "\n"
+     (concat
+      [(str "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"" W "\" height=\"" H
+            "\" viewBox=\"0 0 " W " " H "\" font-family=\"sans-serif\" font-size=\"12\">")
+       (str "<rect width=\"" W "\" height=\"" H "\" fill=\"white\"/>")]
+      (when (< xa 0 xb) [(line (px 0) by (px 0) (+ by bh) "stroke=\"#bbb\"")])
+      (when (< ya 0 yb) [(line bx (py 0) (+ bx bw) (py 0) "stroke=\"#bbb\"")])
+      (mapcat (fn [t s] [(line (px t) (+ by bh) (px t) (+ by bh 5) "stroke=\"black\"")
+                         (text (px t) (+ by bh 18) "middle" s)])
+              x-ticks (labels x-ticks))
+      (mapcat (fn [t s] [(line (- bx 5) (py t) bx (py t) "stroke=\"black\"")
+                         (text (- bx 8) (+ (py t) 4) "end" s)])
+              y-ticks (labels y-ticks))
+      [(str "<rect x=\"" bx "\" y=\"" by "\" width=\"" bw "\" height=\"" bh "\" fill=\"none\" stroke=\"black\"/>")]
+      (for [[i {:keys [segments]}] (map-indexed vector curves)
+            seg segments
+            r (runs (map (fn [[x y]] [(px x) (py y)]) seg) clipbox)]
+        (str "<polyline fill=\"none\" stroke=\"" (colours (mod i (count colours)))
+             "\" stroke-width=\"1.5\" stroke-linejoin=\"round\" points=\""
+             (str/join " " (map (fn [[x y]] (str (n2 x) "," (n2 y))) r)) "\"/>"))
+      ["</svg>" ""]))))

@@ -1,0 +1,34 @@
+(ns clotran.plot
+  "Graphs that pick their picture from the data (PLAN.md). Today: a
+  function of x, as a curve, to a scene and to SVG."
+  (:require [clotran.plot.sample :as sample]
+            [clotran.plot.svg :as svg]
+            [clotran.plot.ticks :as ticks]))
+
+(def size "The picture, [width height] in pixels." [600 400])
+(def box "The plot box inside it, [x y width height]." [60 20 520 340])
+
+(defn graph
+  "The scene for the curve of f, a function of one double, over
+  xmin..xmax (-10..10 by default, a TI-85's ZStandard): plain data,
+  {:size :box :x-range :y-range :x-ticks :y-ticks :curves [{:segments}]},
+  each segment a polyline [[x y] ..] in data units. The y range and
+  ticks are chosen by clotran.plot.sample; the x range is as given,
+  with extended-Wilkinson ticks inside it."
+  ([f] (graph f -10 10))
+  ([f xmin xmax]
+   (let [[a b] (map double (sort [xmin xmax]))
+         [_ _ w h] box
+         s (sample/sample f a b {:w w :h h})]
+     {:size size :box box
+      :x-range [a b]
+      :x-ticks (filterv #(<= a % b) (ticks/extended a b 5))
+      :y-range (:y-range s) :y-ticks (:y-ticks s)
+      :curves [{:segments (:segments s)}]})))
+
+(defn graph-svg
+  "The graph of f written to path as SVG; returns path. Options: :x
+  [xmin xmax]."
+  [f path & {:keys [x] :or {x [-10 10]}}]
+  (spit path (svg/svg (graph f (x 0) (x 1))))
+  path)
