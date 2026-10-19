@@ -13,6 +13,7 @@
             [clojure.string :as str]
             [clotran.plot :as plot]
             [clotran.plot.marks :as marks]
+            [clotran.plot.mesh :as mesh]
             [clotran.plot.theme :as theme]
             [clotran.ui :as ui]))
 
@@ -166,3 +167,19 @@
       (add-watch f st (fn [_ _ _ _] (redraw! st))))
     (redraw! st)
     st))
+
+(defn show3d
+  "A window with the surface z = f(x, y) in 3D, drawn by the GPU (Metal on
+  macOS, Vulkan on Windows): drag to turn it, scroll to zoom. Answers the
+  window's state; its :win is the clotran.ui window. Options: those of
+  clotran.plot/surface (:x :y :n), :theme, :title, :width and :height
+  (700 by 560). Where there is no GPU view, the surface is drawn in 2D,
+  as its SVG is."
+  [f & {:keys [theme title width height] :or {width 700 height 560} :as opts}]
+  (let [th (theme/theme (or theme (theme/default)))
+        s (apply plot/surface f (mapcat identity (select-keys opts [:x :y :n])))
+        win (ui/window {:title (or title "surface") :width width :height height})]
+    (if (ui/view3d! win)
+      (ui/scene3d! win (mesh/mesh s th))
+      (ui/draw! win (ui-marks (marks/marks s th) th) :font (family (:font th))))
+    (atom {:win win :scene s :th th})))

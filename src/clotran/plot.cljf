@@ -49,6 +49,13 @@
   (require 'clotran.plot.window)
   (apply (resolve 'clotran.plot.window/show) f opts))
 
+(defn show3d
+  "The surface z = f(x, y) in a window, in 3D on the GPU: drag to turn it,
+  scroll to zoom (clotran.plot.window/show3d, whose options it takes)."
+  [f & opts]
+  (require 'clotran.plot.window)
+  (apply (resolve 'clotran.plot.window/show3d) f opts))
+
 (defn graph-svg
   "The graph of f (or of a vector of functions) written to path as SVG;
   returns path. Options: :x [xmin xmax] (-10..10); :theme, a built-in's

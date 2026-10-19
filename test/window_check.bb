@@ -22,8 +22,19 @@
 ;;             "(* x" keeps the last graph; two forms are two curves
 ;;   closed    no window left, and the program ends by itself (status 0)
 ;;
-;; macOS only for now (the pictures need its offscreen path and sips).
-;; Usage: bb test/window_check.bb   Env: CLOTRAN, CLOTRAN_UI (../clotran-ui)
+;;   gpu       3D on the GPU (Metal; Vulkan on Windows): the camera starts at
+;;             clotran.plot.surface's view (-35, 28, zoom 1); the offscreen
+;;             picture has the dark ground at its corner and the surface
+;;             over a fifth of it at least; the frame as shown is read back
+;;   turned    a drag of (+80, -40) px turns it half a degree a pixel, to
+;;             (-75, 8), a scroll of -5 zooms it by e^0.25, and the picture
+;;             changes
+;;
+;; On macOS this runs clotran itself. A run elsewhere (Windows: the
+;; same window_check.cljf, its out/ fetched) is judged with --from DIR,
+;; its pictures BMPs; sips reads both.
+;; Usage: bb test/window_check.bb [--from DIR]
+;; Env: CLOTRAN, CLOTRAN_UI (../clotran-ui)
 (require '[babashka.fs :as fs]
          '[babashka.process :as p]
          '[clojure.edn :as edn]
@@ -33,24 +44,31 @@
 (def root (fs/normalize (fs/path here "..")))
 (def ui-root (or (System/getenv "CLOTRAN_UI") (str (fs/normalize (fs/path root ".." "clotran-ui")))))
 (def clotran (or (System/getenv "CLOTRAN") (str (fs/normalize (fs/path root ".." "clotran" "clotran")))))
-(def out (str (fs/path here "out" "window")))
+(def from (second (drop-while #(not= "--from" %) *command-line-args*)))
+(def out (or from (str (fs/path here "out" "window"))))
 (fs/create-dirs out)
 
 (def run
-  (let [proc (p/process [clotran (str (fs/path here "window_check.cljf")) out]
-                        {:out :string :err :string :in ""
-                         :extra-env {"CLOTRAN_PATH" (str/join ":" [(str ui-root "/src") (str root "/src") (str root "/resources")])}})
-        r (deref proc 600000 ::timeout)]
-    (when (= r ::timeout) (p/destroy-tree proc) (println "deadline hit") (System/exit 1))
-    r))
+  (if from
+    {:exit 0 :err ""}
+    (let [proc (p/process [clotran (str (fs/path here "window_check.cljf")) out]
+                          {:out :string :err :string :in ""
+                           :extra-env {"CLOTRAN_PATH" (str/join ":" [(str ui-root "/src") (str root "/src") (str root "/resources")])}})
+          r (deref proc 600000 ::timeout)]
+      (when (= r ::timeout) (p/destroy-tree proc) (println "deadline hit") (System/exit 1))
+      r)))
 
 (def res (into {} (keep #(when (str/starts-with? % "[") (let [v (edn/read-string %)] [(first v) (vec (rest v))]))
-                        (str/split-lines (:out run)))))
+                        (str/split-lines (slurp (str out "/results.edn"))))))
 
-;; ---- pixels: PNG to BMP by sips, read here ----
-(defn bmp [png]
-  (let [b (str png ".bmp")]
-    (p/shell {:out :string :err :string} "sips" "-s" "format" "bmp" png "--out" b)
+(defn pic
+  "A picture of the run: name.png, or name.bmp from Windows."
+  [name] (let [p (str out "/" name ".png")] (if (fs/exists? p) p (str out "/" name ".bmp"))))
+
+;; ---- pixels: any picture to BMP by sips, read here ----
+(defn bmp [f]
+  (let [b (str f ".read.bmp")]
+    (p/shell {:out :string :err :string} "sips" "-s" "format" "bmp" f "--out" b)
     (let [bs (fs/read-all-bytes b)
           u (fn [i n] (reduce (fn [a k] (+ a (bit-shift-left (bit-and 0xff (aget bs (+ i k))) (* 8 k)))) 0 (range n)))
           off (u 10 4) w (u 18 4) h0 (u 22 4) h (if (> h0 0x7fffffff) (- 0x100000000 h0) h0)
@@ -67,7 +85,7 @@
 (let [[id n] (res :opened)] (check "opened" (and (pos? id) (= 1 n)) [id n]))
 
 (let [[ok box xr yr] (res :snapshot)
-      {:keys [rgb]} (bmp (str out "/snapshot-sin.png"))
+      {:keys [rgb]} (bmp (pic "snapshot-sin"))
       [bx by bw bh] box
       px (fn [x] (+ bx (* (- x (xr 0)) (/ bw (- (xr 1) (xr 0))))))
       py (fn [y] (- (+ by bh) (* (- y (yr 0)) (/ bh (- (yr 1) (yr 0))))))
@@ -76,7 +94,7 @@
   (check "pixels" (and ok (close-to? (rgb 3 3) [0x0f 0x0f 0x12] 2) (some #(close-to? % [0x58 0xC4 0xDD] 40) near))
          [(rgb 3 3) cx cy]))
 
-(let [[ok] (res :capture) f (str out "/window-sin.png")
+(let [[ok] (res :capture) f (pic "window-sin")
       {:keys [w h]} (when (fs/exists? f) (bmp f))]
   (check "capture" (and ok w (>= w 600) (>= h 400)) [w h]))
 
@@ -105,6 +123,22 @@
                    (= (res :calc-two) [2 true]))
        [(res :calc-square) (res :calc-unfinished) (res :calc-two)])
 (check "closed"(and (= (res :closed) [0]) (zero? (:exit run))) [(res :closed) (:exit run)])
+
+(let [[cam ok-snap ok-cap] (res :gpu-view)
+      {:keys [rgb w h]} (when ok-snap (bmp (pic "gpu-ripple")))
+      lit (when rgb (count (for [x (range 0 w 10) y (range 0 h 10) :when (not (close-to? (rgb x y) [0x0f 0x0f 0x12] 6))] 1)))
+      total (when rgb (* (count (range 0 w 10)) (count (range 0 h 10))))]
+  (check "gpu" (and (= cam {:azimuth -35.0 :elevation 28.0 :zoom 1.0}) ok-snap ok-cap (fs/exists? (pic "gpu-shown"))
+                    (close-to? (rgb 2 2) [0x0f 0x0f 0x12] 2) (> lit (/ total 5)))
+         [cam lit total]))
+
+(let [[cam ok] (res :gpu-turned)
+      a (when ok (bmp (pic "gpu-ripple"))) b (when ok (bmp (pic "gpu-ripple-turned")))
+      differ (when ok (count (for [x (range 0 700 10) y (range 0 560 10)
+                                   :when (not (close-to? ((:rgb a) x y) ((:rgb b) x y) 8))] 1)))]
+  (check "turned" (and ok (= -75.0 (:azimuth cam)) (= 8.0 (:elevation cam))
+                       (< (abs (- (:zoom cam) (Math/exp 0.25))) 1e-4) (> differ 100))
+         [cam differ]))
 
 (doseq [[n ok d] @checks] (println (format "%-8s %s %s" n (if ok "ok" "FAILED") (pr-str d))))
 (let [good (count (filter second @checks))]

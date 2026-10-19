@@ -12,9 +12,10 @@ file.
     (graph scan-atom)        ; redrawn as the calculation fills it in
 
 What works today: ticks; a function's graph, or several, in a window
-with trace and zoom (macOS) and to SVG; a graph of an atom, redrawn when
-it changes; a graphing calculator; surfaces to SVG. What it is to become,
-and in what order, is [PLAN.md](PLAN.md).
+with trace and zoom, and to SVG; a graph of an atom, redrawn when it
+changes; a graphing calculator; surfaces to SVG and, in a window, in 3D
+on the GPU, turned with the mouse -- on macOS and Windows. What it is to
+become, and in what order, is [PLAN.md](PLAN.md).
 
 ## In a window
 
@@ -41,12 +42,26 @@ tan, sqrt, exp, log, pow, PI and the rest of `clojure.math` by name.
 While what is typed is not finished, the last graph stays and the line
 under the field says why.
 
-Today this needs macOS and a clotran with `fortran/main-thread*` (core
-branch `feat/ui-main-thread`, until it merges); Windows is next.
+**Surfaces in 3D**, drawn by the GPU (Metal on macOS, Vulkan on Windows);
+drag to turn, scroll to zoom:
+
+    (plot/show3d (fn [x y] (m/sin (m/sqrt (+ (* x x) (* y y))))))
+
+The mesh (`clotran.plot.mesh`) is the SVG surface's grid, its colours from
+the theme's colormap, its triangles lit as the SVG shades its cells. No
+tick labels in the 3D view yet.
+
+Today this needs a clotran with `fortran/main-thread*` (core branch
+`feat/ui-main-thread`, until it merges), and on Windows MSYS2's UCRT64
+compilers to build clotran-ui the first time.
 `test/window_check.bb` opens real windows, drives them with events as a
-person would, and checks 12 things: the window, its pixels, trace, zoom,
-`+`, going back, resizing, a live atom, three curves, the calculator,
-and that every window closes and the program ends by itself.
+person would, and checks 14 things: the window, its pixels, trace, zoom,
+`+`, going back, resizing, a live atom, three curves, the calculator, the
+3D view and turning it, and that every window closes and the program
+ends by itself. On Windows, test/window_check.cljf runs on the box and
+`bb test/window_check.bb --from DIR` judges what it wrote: 14 of 14 there
+too.
+
 
 ## Ticks
 

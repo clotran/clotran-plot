@@ -5,6 +5,14 @@
          '[clotran.ui :as ui] '[clojure.math :as m])
 
 (def out (first *command-line-args*))
+(def windows? (clojure.string/starts-with? (str (clotran.host.system/getProperty "os.name")) "Windows"))
+(defn img
+  "A picture's path: PNG on macOS, BMP on Windows (written with no image library)."
+  [name] (str out "/" name (if windows? ".bmp" ".png")))
+(defn rec
+  "A result: printed, and kept in out/results.edn for a judge elsewhere."
+  [v] (prn v) (spit (str out "/results.edn") (str (pr-str v) "\n") :append true))
+(spit (str out "/results.edn") "")
 
 (defn settle
   "Waits until (pred) or 10 s; answers (pred)'s last value."
@@ -20,41 +28,41 @@
 (def st (plot/show m/sin))
 (settle #(:scene @st))
 (def w (:win @st))
-(prn [:opened w (ui/open-count)])
-(prn [:capture (ui/capture w (str out "/window-sin.png"))])
-(prn [:snapshot (ui/snapshot w 600 400 (str out "/snapshot-sin.png")) (:box (:scene @st)) (:x-range (:scene @st)) (:y-range (:scene @st))])
+(rec [:opened w (ui/open-count)])
+(rec [:capture (ui/capture w (img "window-sin"))])
+(rec [:snapshot (ui/snapshot w 600 400 (img "snapshot-sin")) (:box (:scene @st)) (:x-range (:scene @st)) (:y-range (:scene @st))])
 
 ;; trace: the mouse at x = 1.3 on the curve
 (let [[mx my] (px-of st 1.3 (m/sin 1.3))]
   (ui/inject! w {:type :move :x mx :y my :held 0})
-  (prn [:trace mx my (settle #(:trace @st))])
+  (rec [:trace mx my (settle #(:trace @st))])
   (clotran.host.thread/sleep 300)
-  (ui/capture w (str out "/window-trace.png")))
+  (ui/capture w (img "window-trace")))
 
 ;; zoom: a box dragged from (-2, 0.5) to (3, -0.5)
 (let [[x0 y0] (px-of st -2 0.5) [x1 y1] (px-of st 3 -0.5)]
   (ui/inject! w {:type :down :x x0 :y y0 :button 1 :count 1})
   (ui/inject! w {:type :move :x x1 :y y1 :held 1})
   (clotran.host.thread/sleep 500)
-  (ui/capture w (str out "/window-zoom-box.png"))
+  (ui/capture w (img "window-zoom-box"))
   (ui/inject! w {:type :up :x x1 :y y1 :button 1 :count 1})
   (settle #(near [-2.0 3.0] (:x-range (:scene @st))))
-  (prn [:zoom [x0 y0 x1 y1] (:x @st) (:y @st) (:x-range (:scene @st)) (:y-range (:scene @st))]))
-(ui/capture w (str out "/window-zoomed.png"))
+  (rec [:zoom [x0 y0 x1 y1] (:x @st) (:y @st) (:x-range (:scene @st)) (:y-range (:scene @st))]))
+(ui/capture w (img "window-zoomed"))
 
 ;; + zooms in about the middle, Escape goes back, twice to the start
 (ui/inject! w {:type :key :char \+})
 (settle #(near [-0.75 1.75] (:x-range (:scene @st))))
-(prn [:plus (:x-range (:scene @st)) (:y-range (:scene @st))])
+(rec [:plus (:x-range (:scene @st)) (:y-range (:scene @st))])
 (ui/inject! w {:type :key :key :escape})
 (ui/inject! w {:type :key :key :escape})
 (settle #(= [-10.0 10.0] (:x-range (:scene @st))))
-(prn [:back (:x-range (:scene @st)) (:y-range (:scene @st))])
+(rec [:back (:x-range (:scene @st)) (:y-range (:scene @st))])
 
 ;; resize
 (ui/inject! w {:type :resize :width 800 :height 500})
 (settle #(= [800 500] (:size (:scene @st))))
-(prn [:resize (:size (:scene @st)) (:box (:scene @st))])
+(rec [:resize (:size (:scene @st)) (:box (:scene @st))])
 (ui/close! w)
 
 ;; live: a graph of an atom redraws when it changes
@@ -62,16 +70,16 @@
 (def st2 (plot/show a :title "live"))
 (settle #(:scene @st2))
 (defn first-pt [] (first (first (:segments (first (:curves (:scene @st2)))))))
-(prn [:live-before (first-pt)])
+(rec [:live-before (first-pt)])
 (reset! a m/cos)
 (settle #(not= (m/sin -10.0) (second (first-pt))))
-(prn [:live-after (first-pt)])
+(rec [:live-after (first-pt)])
 (ui/close! (:win @st2))
 
 ;; several at once
 (def st3 (plot/show [m/sin m/cos #(/ % 4)] :title "three"))
 (settle #(:scene @st3))
-(prn [:three (count (:curves (:scene @st3))) (ui/capture (:win @st3) (str out "/window-three.png"))])
+(rec [:three (count (:curves (:scene @st3))) (ui/capture (:win @st3) (img "window-three"))])
 (ui/close! (:win @st3))
 
 ;; the calculator: typing (the field set, its change event injected)
@@ -82,13 +90,28 @@
 (type! "(* x x)")
 (settle #(= [0.0 100.0] (:y-range (:scene @c))))
 (clotran.host.thread/sleep 300)
-(prn [:calc-square (:y-range (:scene @c)) (ui/capture (:win @c) (str out "/calc-square.png"))])
+(rec [:calc-square (:y-range (:scene @c)) (ui/capture (:win @c) (img "calc-square"))])
 (type! "(* x")
 (clotran.host.thread/sleep 1000)
-(prn [:calc-unfinished (:y-range (:scene @c)) (ui/capture (:win @c) (str out "/calc-unfinished.png"))])
+(rec [:calc-unfinished (:y-range (:scene @c)) (ui/capture (:win @c) (img "calc-unfinished"))])
 (type! "(sin x) (/ x 4)")
 (settle #(= 2 (count (:curves (:scene @c)))))
 (clotran.host.thread/sleep 300)
-(prn [:calc-two (count (:curves (:scene @c))) (ui/capture (:win @c) (str out "/calc-two.png"))])
+(rec [:calc-two (count (:curves (:scene @c))) (ui/capture (:win @c) (img "calc-two"))])
 (ui/close! (:win @c))
-(prn [:closed (ui/open-count)])
+
+;; 3D on the GPU: a ripple, drawn offscreen and as shown, turned by a
+;; drag of (+80, -40) px -- half a degree a pixel -- and zoomed by a scroll
+(def s3 (plot/show3d (fn [x y] (m/sin (m/sqrt (+ (* x x) (* y y)))))))
+(def w3 (:win @s3))
+(clotran.host.thread/sleep 1000)
+(rec [:gpu-view (ui/camera w3) (ui/snapshot3d w3 700 560 (img "gpu-ripple")) (ui/capture w3 (img "gpu-shown"))])
+(ui/inject! w3 {:type :down :x 300 :y 300 :button 1 :count 1})
+(ui/inject! w3 {:type :move :x 380 :y 260 :held 1})
+(ui/inject! w3 {:type :up :x 380 :y 260 :button 1 :count 1})
+(ui/inject! w3 {:type :scroll :dy -5})
+(settle #(not= 28.0 (:elevation (ui/camera w3))))
+(clotran.host.thread/sleep 300)
+(rec [:gpu-turned (ui/camera w3) (ui/snapshot3d w3 700 560 (img "gpu-ripple-turned"))])
+(ui/close! w3)
+(rec [:closed (ui/open-count)])

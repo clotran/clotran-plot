@@ -1,0 +1,34 @@
+(ns clotran.plot.mesh
+  "A surface scene (clotran.plot/surface's) as a MESH for a GPU's 3D view
+  (clotran.ui/scene3d!): the grid's finite points in the unit box -- x and
+  y -1/2..1/2, z scaled to the box's height, as clotran.plot.surface/unit
+  and the SVG's view put them -- each coloured from the theme's colormap
+  at its height; two triangles for every cell the SVG draws (none in a
+  hole or outside the z range); the box's twelve edges in the theme's
+  ink; and the theme's ground. The GPU lights the triangles as the SVG
+  shades its cells, so the two pictures agree."
+  (:require [clotran.plot.marks :as marks]
+            [clotran.plot.surface :as surface]))
+
+(defn mesh
+  "The mesh of surface scene s in the look of th, a theme map."
+  [{:keys [xs ys zs z-range view] :as s} {:keys [colormap ink background]}]
+  (let [[z0 z1] z-range
+        h (:height view)
+        cs (marks/cells s)
+        used (distinct (mapcat (fn [[i j]] [[i j] [(inc i) j] [(inc i) (inc j)] [i (inc j)]]) cs))
+        index (zipmap used (range))
+        vertex (fn [[i j]] (let [[u v w] (surface/unit s [(xs i) (ys j) ((zs i) j)])] [u v (* h w)]))
+        colour (fn [[i j]] (marks/colour-at colormap (/ (- ((zs i) j) z0) (- z1 z0)) 1.0))
+        corners [-0.5 0.5]
+        edge (fn [a b] [(update a 2 * h) (update b 2 * h) ink])]
+    {:vertices (mapv vertex used)
+     :colours (mapv colour used)
+     :triangles (vec (mapcat (fn [[i j]] (let [a (index [i j]) b (index [(inc i) j])
+                                               c (index [(inc i) (inc j)]) d (index [i (inc j)])]
+                                           [[a b c] [a c d]]))
+                             cs))
+     :lines (vec (concat (for [v corners w corners] (edge [-0.5 v w] [0.5 v w]))
+                         (for [u corners w corners] (edge [u -0.5 w] [u 0.5 w]))
+                         (for [u corners v corners] (edge [u v -0.5] [u v 0.5]))))
+     :background background}))
