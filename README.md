@@ -4,12 +4,14 @@ Graphs for [clotran](https://github.com/clotran/clotran) -- Clojure
 hosted on Fortran -- that just do the thing, as a TI-85 did: give it a
 function or your data and it draws the obvious picture, with sensible
 ticks and ranges, in a window
-([clotran-ui](https://github.com/clotran/clotran-ui)) or to an SVG or PNG
+([clotran-ui](https://github.com/clotran/clotran-ui)) or to an SVG
 file.
 
-    (graph (* x x))          ; a parabola, ticks and range chosen for you
-    (graph energies)         ; a list of numbers: a line over the step
-    (graph scan-atom)        ; redrawn as the calculation fills it in
+    (plot/y= (* x x))        ; a parabola, ticks and range chosen for you
+    (plot/show scan-atom)    ; redrawn as the calculation fills it in
+
+(A list of numbers graphed as a line, `(graph energies)`, is to come:
+[PLAN.md](PLAN.md).)
 
 What works today: ticks; a function's graph, or several, in a window
 with trace and zoom, and to SVG; a graph of an atom, redrawn when it
@@ -24,13 +26,32 @@ commented out), run `clotran deps` to fetch it, start `clotran` there, and a
 plot opens its own window:
 
     {:deps {clotran/clotran-plot {:git/url "https://github.com/clotran/clotran-plot"
-                                  :git/sha "a89794985d9a26c783c03a98ee7d84f4b802ce82"}}}
+                                  :git/sha "c5a8f98344f7c3ce90f013b2f7ddefbf52d061c7"}}}
 
     (require '[clotran.plot :as plot] '[clojure.math :as m])
-    (plot/show m/sin)                        ; a window: sin x over -10..10
-    (plot/show [m/sin m/cos #(/ % 4)])       ; three at once, one colour each
+    (plot/y= x)                              ; a window: y = x over -10..10
+    (plot/y= (* x x))                        ; the same window, now a parabola
+    (plot/y= (sin x) (/ x 4))                ; two at once, one colour each
+    (plot/show m/sin)                        ; a function, rather than an expression in x
+    (plot/show [m/sin m/cos #(/ % 4)])       ; three functions
     (def f (atom m/sin))
     (plot/show f)  (reset! f m/cos)          ; redrawn when the atom changes
+
+`plot/y=` takes the right-hand side of y = ..., an expression in `x`,
+with sin, cos, sqrt, PI and the rest of `clojure.math` by name (it reads
+the expression as the calculator does, so a `let`'s locals are not seen
+there: give `plot/show` a function for that). Each graph draws in the
+one graph window, brought to the front; close it, and the next opens a
+new one. Something that is not a function of x -- `(plot/show #(%))`,
+which calls x -- is refused before a window opens, saying why.
+
+Ticks are data: `:x-ticks` and `:y-ticks` take the values to mark, made
+however you like -- by `clotran.plot.ticks` (below) or by hand -- and
+are kept through zooms; without them the graph chooses its own:
+
+    (require '[clotran.plot.ticks :as t])
+    (plot/y= (sin x) :y-ticks [-1 0 1])
+    (plot/show m/sin :x-ticks (t/extended -10 10 10))
 
 As a TI-85: move the mouse and the nearest curve's point is marked with
 its x and y (TRACE); drag a box to zoom into it, `+` and `-` zoom in and
@@ -40,7 +61,8 @@ picture the SVG is written from (`clotran.plot.marks`), drawn by
 [clotran-ui](https://github.com/clotran/clotran-ui).
 
 **The graphing calculator** -- a text field and a graph; type an
-expression in x and the graph follows as you type:
+expression in x and the graph follows as you type -- in the project
+directory, after `clotran deps`:
 
     clotran -m clotran.plot.calc
 
@@ -58,14 +80,16 @@ The mesh (`clotran.plot.mesh`) is the SVG surface's grid, its colours from
 the theme's colormap, its triangles lit as the SVG shades its cells. No
 tick labels in the 3D view yet.
 
-This needs clotran 1.0.0-rc.8 or later. No compiler and no git are
-needed: where there is no C compiler, clotran-ui fetches its native
-library prebuilt, and where there is no git, clotran fetches a library
-as GitHub's archive of its sha.
+This needs clotran 1.0.0-rc.8 or later. On macOS (arm64) and Windows
+no compiler and no git are needed: where there is no C compiler,
+clotran-ui fetches its native library prebuilt, and `clotran deps`
+fetches a library as GitHub's archive of its sha. On Linux, clotran-ui
+builds its library with the system's C compiler and GTK 3 (not yet
+tested there).
 
 `test/window_check.bb` opens real windows, drives them with events as a
-person would, and checks 16 things: the window, its pixels, trace, zoom,
-`+`, going back, resizing, a live atom, three curves, the calculator, the
+person would, and checks 18 things: the window, its pixels, trace, zoom,
+`+`, going back, resizing, a live atom, three curves, drawing again in the one window, refusing what is not a function of x, the calculator, the
 3D view and turning it, that what each window shows has exactly its own
 curves (by their colours) at its own size, and that every window closes and the program
 ends by itself. On Windows, test/window_check.cljf runs on the box and
