@@ -19,6 +19,12 @@ become, and in what order, is [PLAN.md](PLAN.md).
 
 ## In a window
 
+Name it in your project's `deps.edn`, start `clotran` there, and a plot
+opens its own window:
+
+    {:deps {clotran/clotran-plot {:git/url "https://github.com/clotran/clotran-plot"
+                                  :git/sha "4c4f773b15c6f4eced04097dfd7fc37989aa6816"}}}
+
     (require '[clotran.plot :as plot] '[clojure.math :as m])
     (plot/show m/sin)                        ; a window: sin x over -10..10
     (plot/show [m/sin m/cos #(/ % 4)])       ; three at once, one colour each
@@ -51,15 +57,11 @@ The mesh (`clotran.plot.mesh`) is the SVG surface's grid, its colours from
 the theme's colormap, its triangles lit as the SVG shades its cells. No
 tick labels in the 3D view yet.
 
-Today this needs a clotran with `fortran/main-thread*` (core branch
-`feat/ui-main-thread`, until it merges). No compiler is needed: where
-there is none, clotran-ui fetches its native library prebuilt.
+This needs clotran 1.0.0-rc.7 or later. No compiler and no git are
+needed: where there is no C compiler, clotran-ui fetches its native
+library prebuilt, and where there is no git, clotran fetches a library
+as GitHub's archive of its sha (the release after rc.7).
 
-**On a Windows PC with nothing else:** install clotran (`irm
-https://raw.githubusercontent.com/clotran/clotran/main/install.ps1 | iex`
-in PowerShell), download `graphing-calculator.zip` from this repository's
-releases, unzip it, and double-click `Graphing Calculator.cmd`. No git,
-no MSYS2 (`windows/make-zip.bb` makes the zip).
 `test/window_check.bb` opens real windows, drives them with events as a
 person would, and checks 16 things: the window, its pixels, trace, zoom,
 `+`, going back, resizing, a live atom, three curves, the calculator, the
