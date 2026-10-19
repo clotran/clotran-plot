@@ -7,3 +7,4 @@ bb test/ticks_oracle.bb
 bb test/plot_check.bb dark
 bb test/plot_check.bb light
 bb test/theme_check.bb
+bb test/surface_check.bb

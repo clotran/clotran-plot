@@ -1,0 +1,118 @@
+(ns clotran.plot.surface
+  "A function of two numbers, z = f(x, y), as a scene: a surface seen in
+  3D, or a heat map from above. f is sampled on an even grid (40 by 40
+  cells by default); where it is not finite there is a hole. With no
+  ranges given, x and y run over -10..10, or -3..3 when the surface is
+  flat (within 1% of its height) over 80% of that square, as a Gaussian
+  bump is. The z range is the samples' extent, a side cut at the 2.5%
+  (or 97.5%) quantile when it reaches more than twice the middle 95%'s
+  height beyond it -- a pole -- and rounded out to extended-Wilkinson
+  ticks. Cells reaching outside the z range are not drawn.
+
+  The 3D view is orthographic: parallel lines stay parallel and a tick
+  spacing reads the same anywhere on an axis, which perspective, made
+  for realism, does not give; Mathematica and gnuplot also draw surfaces
+  so by default. The box is the data's ranges scaled to a cube with a
+  height of 0.6 (Mathematica's BoxRatios are 1:1:0.4), turned by the
+  azimuth about z, tilted by the elevation, and fitted to the picture."
+  (:require [clojure.math :as m]
+            [clotran.plot.ticks :as ticks]))
+
+(def size "The picture, [width height] in pixels." [600 500])
+
+(defn- value [f x y]
+  (let [z (f x y)]
+    (when (and (number? z) (not (NaN? (double z))) (not (infinite? (double z))))
+      (double z))))
+
+(defn- steps [a b n]
+  (mapv #(if (= % n) (double b) (+ a (* % (/ (- b a) n)))) (range (inc n))))
+
+(defn- sample [f [x0 x1] [y0 y1] n]
+  (let [xs (steps x0 x1 n) ys (steps y0 y1 n)]
+    {:xs xs :ys ys :zs (mapv (fn [x] (mapv #(value f x %) ys)) xs)}))
+
+(defn- finite [zs] (vec (sort (remove nil? (apply concat zs)))))
+
+(defn- flat? [zs]
+  (let [s (finite zs)]
+    (or (empty? s)
+        (let [med (s (quot (count s) 2)) tol (* 0.01 (- (peek s) (first s)))]
+          (>= (count (filter #(<= (abs (- % med)) tol) s)) (* 0.8 (count s)))))))
+
+(defn- z-extent [zs]
+  (let [s (finite zs)]
+    (if (empty? s)
+      [-1.0 1.0]
+      (let [q #(s (long (m/floor (* % (dec (count s))))))
+            lo (first s) hi (peek s) qlo (q 0.025) qhi (q 0.975) core (- qhi qlo)]
+        [(if (> (- qlo lo) (* 2 core)) qlo lo)
+         (if (> (- hi qhi) (* 2 core)) qhi hi)]))))
+
+(defn- axis [lo hi]
+  (let [[lo hi] (if (< lo hi) [lo hi] [(- lo 1) (+ hi 1)])]
+    (ticks/extended lo hi 5 {:only-loose true})))
+
+(defn rotate
+  "A point of the unit box (u, v, w each -1/2..1/2) seen from azimuth
+  and elevation (degrees): [right up toward], right and up on the screen,
+  toward the viewer the depth. The view turns the box by the azimuth
+  about its vertical axis, then looks down at it by the elevation."
+  [{:keys [azimuth elevation height]} [u v w]]
+  (let [a (* azimuth (/ m/PI 180)) e (* elevation (/ m/PI 180))
+        X (- (* u (m/cos a)) (* v (m/sin a)))
+        Y (+ (* u (m/sin a)) (* v (m/cos a)))
+        W (* height w)]
+    [X (+ (* Y (m/sin e)) (* W (m/cos e))) (- (* W (m/sin e)) (* Y (m/cos e)))]))
+
+(defn unit
+  "A data point [x y z] in the unit box of scene s."
+  [{:keys [x-range y-range z-range]} [x y z]]
+  (let [f (fn [t [a b]] (- (/ (- t a) (- b a)) 0.5))]
+    [(f x x-range) (f y y-range) (f z z-range)]))
+
+(defn project
+  "A data point [x y z] of scene s in pixels, with its depth toward the
+  viewer: [px py depth]."
+  [{:keys [view] :as s} p]
+  (let [[X U D] (rotate view (unit s p))
+        {:keys [scale origin]} view]
+    [(+ (origin 0) (* scale X)) (- (origin 1) (* scale U)) D]))
+
+(defn- fit
+  "The scale and origin that fit the box's eight corners into the
+  picture, leaving room for ticks and labels."
+  [view [W H]]
+  (let [cs (for [u [-0.5 0.5] v [-0.5 0.5] w [-0.5 0.5]] (rotate view [u v w]))
+        xs (map first cs) us (map second cs)
+        [l r t b] [80 50 30 60]
+        w (- W l r) h (- H t b)
+        dx (- (apply max xs) (apply min xs)) du (- (apply max us) (apply min us))
+        s (min (/ w dx) (/ h du))]
+    {:scale s
+     :origin [(- (+ l (/ (- w (* s dx)) 2)) (* s (apply min xs)))
+              (+ t (/ (- h (* s du)) 2) (* s (apply max us)))]}))
+
+(defn surface
+  "The scene for z = f(x, y), f taking two doubles: plain data, {:kind
+  (:surface or :heat) :size :x-range :y-range :z-range :x-ticks :y-ticks
+  :z-ticks :xs :ys :zs :view}, zs[i][j] = f(xs[i], ys[j]) or nil for a
+  hole. Options: :x and :y, the ranges [a b] (see the namespace's
+  docstring for the defaults); :n, cells along each side (40); :view,
+  :surface or :heat; :azimuth and :elevation in degrees (-35 and 28)."
+  [f & {:keys [x y n view azimuth elevation]
+        :or {n 40 view :surface azimuth -35 elevation 28}}]
+  (let [wide (sample f [-10.0 10.0] [-10.0 10.0] n)
+        [xr yr] (cond (or x y) [(mapv double (or x [-10 10])) (mapv double (or y [-10 10]))]
+                      (flat? (:zs wide)) [[-3.0 3.0] [-3.0 3.0]]
+                      :else [[-10.0 10.0] [-10.0 10.0]])
+        g (if (= [xr yr] [[-10.0 10.0] [-10.0 10.0]]) wide (sample f xr yr n))
+        zt (apply axis (z-extent (:zs g)))
+        inside #(filterv (fn [t] (<= (% 0) t (% 1))) (ticks/extended (% 0) (% 1) 5))
+        v {:azimuth azimuth :elevation elevation :height 0.6}]
+    (merge g
+           {:kind view :size (if (= view :heat) [600 400] size)
+            :box [60 20 520 340]
+            :x-range xr :y-range yr :z-range [(first zt) (peek zt)]
+            :x-ticks (inside xr) :y-ticks (inside yr) :z-ticks zt
+            :view (merge v (fit v size))})))

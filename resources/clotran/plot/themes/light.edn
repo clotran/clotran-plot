@@ -12,4 +12,8 @@
  :font-size 12
  :minus "-"
  :palette ["#1f6fb4" "#d1495b" "#2e933c" "#8c5fbf" "#e08a1e" "#3a3a3a"]
- :stroke 1.5}
+ :stroke 1.5
+ ;; viridis (van der Walt and Smith, matplotlib), five stops.
+ :colormap ["#440154" "#3b528b" "#21918c" "#5ec962" "#fde725"]
+ :mesh "black"
+ :mesh-opacity 0.25}

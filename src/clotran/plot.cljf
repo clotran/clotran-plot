@@ -1,7 +1,9 @@
 (ns clotran.plot
   "Graphs that pick their picture from the data (PLAN.md). Today:
-  functions of x, as curves, to a scene and to SVG."
+  functions of x, as curves, and functions of x and y, as surfaces or
+  heat maps, to a scene and to SVG."
   (:require [clotran.plot.sample :as sample]
+            [clotran.plot.surface :as surface]
             [clotran.plot.svg :as svg]
             [clotran.plot.ticks :as ticks]))
 
@@ -41,4 +43,21 @@
   the project's plot-theme.edn if it has one, else :dark."
   [f path & {:keys [x theme] :or {x [-10 10]}}]
   (spit path (svg/svg (cond-> (graph f (x 0) (x 1)) theme (assoc :theme theme))))
+  path)
+
+(defn surface
+  "The scene for z = f(x, y), f a function of two doubles: a surface in
+  3D, or with :view :heat a heat map. Options: :x and :y ranges [a b],
+  :n cells a side, :view, :azimuth and :elevation; see
+  clotran.plot.surface."
+  [f & opts]
+  (apply surface/surface f opts))
+
+(defn surface-svg
+  "The surface of f written to path as SVG (600 by 500; a heat map 600
+  by 400); returns path. Options: those of surface, and :theme as for
+  graph-svg."
+  [f path & {:keys [theme] :as opts}]
+  (spit path (svg/svg (cond-> (apply surface/surface f (mapcat identity (dissoc opts :theme)))
+                        theme (assoc :theme theme))))
   path)

@@ -12,4 +12,8 @@
  :font-size 14
  :minus "\u2212"
  :palette ["#58C4DD" "#FFFF00" "#83C167" "#FC6255" "#5CD0B3" "#9A72AC" "#FF862F"]
- :stroke 2}
+ :stroke 2
+ ;; Manim's blues through teal and green to yellow.
+ :colormap ["#1C758A" "#29ABCA" "#5CD0B3" "#83C167" "#FFFF00"]
+ :mesh "#0f0f12"
+ :mesh-opacity 0.45}

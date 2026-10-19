@@ -66,6 +66,37 @@ true curve. The y ranges are the expected ones, and each SVG is
 well-formed, with the theme's colours, ground, axes and minus signs.
 The example SVGs land in `test/out/dark/` and `test/out/light/`.
 
+## Surfaces
+
+    (plot/surface-svg (fn [x y] (+ (* x x) (* y y))) "bowl.svg" :x [-3 3] :y [-3 3])
+    (plot/surface-svg (fn [x y] (m/sin (m/sqrt (+ (* x x) (* y y))))) "ripple.svg")
+    (plot/surface-svg pes "pes.svg" :view :heat)      ; seen from above
+    (plot/surface f :azimuth -60 :elevation 40)        ; the scene, as data
+
+`surface` takes a function of two doubles, z = f(x, y), and samples it
+on a grid of 40 by 40 cells (`:n`). Without ranges, x and y run over
+-10..10, or over -3..3 when the surface is flat on most of that square,
+as a Gaussian bump is. The z range is the whole surface's, unless one
+side runs off to a pole; that side is then cut at the middle 95%, as
+for curves, and the range is rounded out to its ticks. Where f is not
+finite there is a hole. A cell with any corner in a hole or outside the
+z range is left out.
+
+The view is orthographic: parallel lines stay parallel, and a tick step
+looks the same anywhere along its axis. Mathematica and gnuplot also
+draw surfaces this way by default. The cells are drawn back to front
+(the painter's algorithm). Each is filled from the theme's `:colormap`
+at its height, shaded by a light from the upper left, and outlined by
+the mesh. A box frames the surface, with ticks on its two nearest bottom
+edges and on its leftmost vertical edge. `:view :heat` draws the same
+grid from above, as a heat map.
+
+`test/surface_check.bb` checks 9 surfaces. Every grid z equals clj's
+f(x, y). Every drawn vertex is where the script's own projection puts
+it. The cells are drawn far to near. Exactly the cells outside holes
+and the z range are drawn. The x, y and z ranges are the expected ones,
+and each SVG is well-formed.
+
 ## Themes
 
 A theme is a plain EDN map. The built-in ones are files themselves,
@@ -96,6 +127,9 @@ naming a theme to start from and changing only the keys you want:
 | `:minus`        | the minus sign in labels: `"-"`, or `"\u2212"` as LaTeX sets it |
 | `:palette`      | the curves' colours, a non-empty vector, used in turn         |
 | `:stroke`       | the curves' stroke width, above 0                             |
+| `:colormap`     | a surface's colours from low to high z: 2 or more `#rrggbb` stops, evenly spaced |
+| `:mesh`         | colour of a surface's mesh lines, or `:none`                  |
+| `:mesh-opacity` | their opacity, 0 to 1                                         |
 | `:extends`      | optional: a built-in's keyword, or an .edn file's path, relative to this file |
 
 A colour is hex (`#rgb`, `#rrggbb` or `#rrggbbaa`) or one of CSS 1's
@@ -108,7 +142,7 @@ never falls back to a default silently.
 runs in (your project's root), it is the theme used when none is named.
 This is a file, not a `deps.edn` key, because it needs no `deps.edn` at
 all. `test/theme_check.bb` checks a custom theme, a palette-only
-override, the project default, and 18 malformed themes, each refused
+override, the project default, and 21 malformed themes, each refused
 with the right message.
 
 ## License

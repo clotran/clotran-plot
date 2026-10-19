@@ -21,6 +21,10 @@
     :minus         the minus sign in labels: \"-\", or \"\\u2212\" as LaTeX
     :palette       the curves' colours, a non-empty vector, used in turn
     :stroke        the curves' stroke width, a number above 0
+    :colormap      a surface's or heat map's colours from low to high z:
+                   a vector of 2 or more #rrggbb stops, evenly spaced
+    :mesh          colour of a surface's mesh lines, or :none
+    :mesh-opacity  their opacity, 0 to 1
     :extends       (optional) a built-in theme's keyword, or a path to
                    an .edn file, relative to this theme's own file
 
@@ -57,7 +61,11 @@
    :font-size [positive? "a number above 0"]
    :minus [#(and (string? %) (not= "" %)) "a non-empty string"]
    :palette [#(and (vector? %) (seq %) (every? colour? %)) "a non-empty vector of colours"]
-   :stroke [positive? "a number above 0"]})
+   :stroke [positive? "a number above 0"]
+   :colormap [#(and (vector? %) (>= (count %) 2) (every? (fn [c] (and (string? c) (re-matches #"#[0-9a-fA-F]{6}" c))) %))
+              "a vector of 2 or more #rrggbb colours"]
+   :mesh [#(or (= :none %) (colour? %)) "a colour or :none"]
+   :mesh-opacity [#(and (number? %) (<= 0 % 1)) "a number from 0 to 1"]})
 
 (def ^:private ^:dynamic *via*
   "The theme whose :extends is being read, for the message."

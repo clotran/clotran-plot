@@ -59,6 +59,9 @@
    [":extends cycle" (pr-str (bad "cycle-a.edn")) ["cycle-" "more than 16 deep"]]
    ["bad base" (pr-str (bad "extends-bad.edn")) ["unknown-key.edn" ":colour-scheme" "extended by" "extends-bad.edn"]]
    ["no such file" (pr-str (bad "nope.edn")) ["nope.edn" "no such file"]]
+   ["colormap of one" (pr-str (bad "colormap-short.edn")) ["colormap-short.edn" ":colormap is not a vector of 2 or more #rrggbb colours"]]
+   ["colormap name" (pr-str (bad "colormap-name.edn")) ["colormap-name.edn" ":colormap is not"]]
+   ["mesh opacity" (pr-str (bad "mesh-opacity.edn")) ["mesh-opacity.edn" ":mesh-opacity is not a number from 0 to 1"]]
    ["inline opacity" "{:extends :dark :grid-opacity -0.1}" ["theme map" ":grid-opacity is not"]]
    ["not a theme" "42" ["a theme is a keyword, a path or a map"]]
    ["unknown keyword" ":neon" [":neon" "no such built-in theme"]]])
