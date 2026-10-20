@@ -7,8 +7,8 @@ ticks and ranges, in a window
 ([clotran-ui](https://github.com/clotran/clotran-ui)) or to an SVG
 file.
 
-    (plot/y= (* x x))        ; a parabola, ticks and range chosen for you
-    (plot/show scan-atom)    ; redrawn as the calculation fills it in
+    (plot/plot (fn [x] (* x x)))   ; a parabola, ticks and range chosen for you
+    (plot/plot scan-atom)          ; redrawn as the calculation fills it in
 
 (A list of numbers graphed as a line, `(graph energies)`, is to come:
 [PLAN.md](PLAN.md).)
@@ -26,32 +26,28 @@ commented out), run `clotran deps` to fetch it, start `clotran` there, and a
 plot opens its own window:
 
     {:deps {clotran/clotran-plot {:git/url "https://github.com/clotran/clotran-plot"
-                                  :git/sha "c5a8f98344f7c3ce90f013b2f7ddefbf52d061c7"}}}
+                                  :git/sha "fc0e70a9e8610af85906a0eb23d4d27451596798"}}}
 
     (require '[clotran.plot :as plot] '[clojure.math :as m])
-    (plot/y= x)                              ; a window: y = x over -10..10
-    (plot/y= (* x x))                        ; the same window, now a parabola
-    (plot/y= (sin x) (/ x 4))                ; two at once, one colour each
-    (plot/show m/sin)                        ; a function, rather than an expression in x
-    (plot/show [m/sin m/cos #(/ % 4)])       ; three functions
+    (plot/plot (fn [x] x))                   ; a window: y = x over -10..10
+    (plot/plot (fn [x] (* x x)))             ; the same window, now a parabola
+    (plot/plot m/sin)                        ; any function of x
+    (plot/plot [m/sin m/cos #(/ % 4)])       ; three at once, one colour each
     (def f (atom m/sin))
-    (plot/show f)  (reset! f m/cos)          ; redrawn when the atom changes
+    (plot/plot f)  (reset! f m/cos)          ; redrawn when the atom changes
 
-`plot/y=` takes the right-hand side of y = ..., an expression in `x`,
-with sin, cos, sqrt, PI and the rest of `clojure.math` by name (it reads
-the expression as the calculator does, so a `let`'s locals are not seen
-there: give `plot/show` a function for that). Each graph draws in the
-one graph window, brought to the front; close it, and the next opens a
-new one. Something that is not a function of x -- `(plot/show #(%))`,
-which calls x -- is refused before a window opens, saying why.
+Each graph draws in the one graph window, brought to the front; close
+it, and the next opens a new one. Something that is not a function of
+x -- `(plot/plot #(%))`, which calls x -- is refused before a window
+opens, saying why.
 
 Ticks are data: `:x-ticks` and `:y-ticks` take the values to mark, made
 however you like -- by `clotran.plot.ticks` (below) or by hand -- and
 are kept through zooms; without them the graph chooses its own:
 
     (require '[clotran.plot.ticks :as t])
-    (plot/y= (sin x) :y-ticks [-1 0 1])
-    (plot/show m/sin :x-ticks (t/extended -10 10 10))
+    (plot/plot m/sin :y-ticks [-1 0 1])
+    (plot/plot m/sin :x-ticks (t/extended -10 10 10))
 
 As a TI-85: move the mouse and the nearest curve's point is marked with
 its x and y (TRACE); drag a box to zoom into it, `+` and `-` zoom in and
@@ -74,7 +70,7 @@ under the field says why.
 **Surfaces in 3D**, drawn by the GPU (Metal on macOS, Vulkan on Windows);
 drag to turn, scroll to zoom:
 
-    (plot/show3d (fn [x y] (m/sin (m/sqrt (+ (* x x) (* y y))))))
+    (plot/plot3d (fn [x y] (m/sin (m/sqrt (+ (* x x) (* y y))))))
 
 The mesh (`clotran.plot.mesh`) is the SVG surface's grid, its colours from
 the theme's colormap, its triangles lit as the SVG shades its cells. No
