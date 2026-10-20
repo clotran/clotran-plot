@@ -25,7 +25,7 @@
 
 (defn px-of [st x y] (let [[px py] (marks/pixels (:scene @st))] [(px x) (py y)]))
 
-(def st (plot/show m/sin))
+(def st (plot/plot m/sin))
 (settle #(:scene @st))
 (def w (:win @st))
 (rec [:opened w (ui/open-count)])
@@ -67,16 +67,16 @@
 (rec [:resize (:size (:scene @st)) (:box (:scene @st))])
 ;; one graph window: the next graph draws in this one, and a thing that
 ;; is not a function of x is refused before any window is touched
-(def st-b (plot/y= (* x x) :y-ticks [0 50 100]))
+(def st-b (plot/plot (fn [x] (* x x)) :y-ticks [0 50 100]))
 (rec [:reused (identical? st st-b) (ui/open-count) (count (:curves (:scene @st-b))) (:y-ticks (:scene @st-b))])
-(rec [:refused (try (plot/show #(%)) :not-refused
+(rec [:refused (try (plot/plot #(%)) :not-refused
                     (catch :default e (boolean (re-find #"at x = 1" (str (ex-message e))))))
       (ui/open-count)])
 (ui/close! w)
 
 ;; live: a graph of an atom redraws when it changes
 (def a (atom m/sin))
-(def st2 (plot/show a :title "live"))
+(def st2 (plot/plot a :title "live"))
 (settle #(:scene @st2))
 (defn first-pt [] (first (first (:segments (first (:curves (:scene @st2)))))))
 (rec [:live-before (first-pt)])
@@ -86,7 +86,7 @@
 (ui/close! (:win @st2))
 
 ;; several at once
-(def st3 (plot/show [m/sin m/cos #(/ % 4)] :title "three"))
+(def st3 (plot/plot [m/sin m/cos #(/ % 4)] :title "three"))
 (settle #(:scene @st3))
 (settle #(= (:size (:scene @st3)) (mapv long (ui/area-size (:win @st3)))))
 (rec [:sizes-three (:size (:scene @st3)) (ui/area-size (:win @st3))])
@@ -115,7 +115,7 @@
 
 ;; 3D on the GPU: a ripple, drawn offscreen and as shown, turned by a
 ;; drag of (+80, -40) px -- half a degree a pixel -- and zoomed by a scroll
-(def s3 (plot/show3d (fn [x y] (m/sin (m/sqrt (+ (* x x) (* y y)))))))
+(def s3 (plot/plot3d (fn [x y] (m/sin (m/sqrt (+ (* x x) (* y y)))))))
 (def w3 (:win @s3))
 (clotran.host.thread/sleep 1000)
 (rec [:gpu-view (ui/camera w3) (ui/snapshot3d w3 700 560 (img "gpu-ripple")) (ui/capture w3 (img "gpu-shown"))])

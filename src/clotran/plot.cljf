@@ -45,55 +45,36 @@
         :y-range y-range :y-ticks (if yt (within c d yt) y-ticks)
         :curves (mapv #(hash-map :segments (:segments %)) ss)}))))
 
-(defn- check-show!
-  "show's arguments, refused before any window opens, in words a person
+(defn- check-plot!
+  "plot's arguments, refused before any window opens, in words a person
   can act on: f each a function of x answering a number at x = 1, opts
   keyword and value pairs."
   [f opts]
-  (let [hint "for y = x write (plot/y= x), or (plot/show identity)"]
+  (let [hint "for y = x write (plot/plot (fn [x] x))"]
     (when-not (and (even? (count opts)) (every? keyword? (take-nth 2 opts)))
-      (throw (ex-info (str "plot/show takes a function, then options as :x [-10 10] :y [-1 1] :title \"..\"; got "
+      (throw (ex-info (str "plot/plot takes a function, then options as :x [-10 10] :y [-1 1] :title \"..\"; got "
                            (str/join " " (map pr-str opts))) {:opts opts})))
     (doseq [g (let [v (if (or (fn? f) (vector? f)) f (try (deref f) (catch :default _ f)))] (if (vector? v) v [v]))]
       (when-not (fn? g)
-        (throw (ex-info (str "plot/show graphs a function of x, not " (pr-str g) " -- " hint) {:f g})))
+        (throw (ex-info (str "plot/plot graphs a function of x, not " (pr-str g) " -- " hint) {:f g})))
       (let [y (try (g 1.0)
                    (catch :default e
                      (throw (ex-info (str "the function threw at x = 1: " (or (ex-message e) (str e)) " -- " hint) {:f g}))))]
         (when-not (number? y)
           (throw (ex-info (str "the function gives " (pr-str y) " at x = 1, not a number -- " hint) {:f g})))))))
 
-(defn show
+(defn plot
   "f graphed in a window, with trace and zoom (clotran.plot.window/show,
   whose options it takes): f a function of x, a vector of them, or an
   atom holding either, redrawn when it changes. A function that is not
   one of x is refused before a window opens. Loads clotran-ui, and
   builds its native half the first time, only when called."
   [f & opts]
-  (check-show! f opts)
+  (check-plot! f opts)
   (require 'clotran.plot.window)
   (apply (resolve 'clotran.plot.window/show) f opts))
 
-(defmacro y=
-  "y = the expression in x, graphed in a window -- written as on paper:
-
-    (plot/y= x)               the line y = x
-    (plot/y= (* x x))         a parabola
-    (plot/y= (sin x) (/ x 4)) two at once
-    (plot/y= x :y-ticks [-10 0 10])   then show's options
-
-  sin, cos, sqrt, PI and the rest of clojure.math by name, as the
-  graphing calculator reads them (clotran.plot.calc/functions); an
-  expression it cannot graph is refused, saying why, before a window
-  opens. Answers the window's state, as show."
-  [& forms]
-  ;; ponytail: read in calc's namespace, so the caller's locals are not
-  ;; seen -- (let [a 2] (y= (* a x))) fails; show takes a fn for that
-  (let [[exprs opts] (split-with (complement keyword?) forms)]
-    `(do (require 'clotran.plot.calc)
-         (show ((resolve 'clotran.plot.calc/functions) ~(str/join " " (map pr-str exprs))) ~@opts))))
-
-(defn show3d
+(defn plot3d
   "The surface z = f(x, y) in a window, in 3D on the GPU: drag to turn it,
   scroll to zoom (clotran.plot.window/show3d, whose options it takes)."
   [f & opts]
