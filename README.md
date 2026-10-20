@@ -21,9 +21,9 @@ become, and in what order, is [PLAN.md](PLAN.md).
 
 ## In a window
 
-Name it in your project's `deps.edn` (`clotran new` writes this line,
-commented out), run `clotran deps` to fetch it, start `clotran` there, and a
-plot opens its own window:
+Add this line to your project's `deps.edn` (`clotran new my-project` makes
+one), run `clotran deps` to fetch it, start `clotran` there, and a plot
+opens its own window:
 
     {:deps {clotran/clotran-plot {:git/url "https://github.com/clotran/clotran-plot"
                                   :git/sha "fc0e70a9e8610af85906a0eb23d4d27451596798"}}}
